@@ -180,7 +180,7 @@ class BillingManager(
     }
 
     companion object {
-        const val PRO_PRODUCT_ID = "io.mynote.pro"
+        const val PRO_PRODUCT_ID = "com.chrisphua.mynote.pro"
         const val PRO_ENTITLEMENT = "pro"
     }
 }

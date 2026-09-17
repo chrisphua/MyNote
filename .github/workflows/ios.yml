@@ -106,6 +106,5 @@ jobs:
           APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.ASC_KEY_ID }}
           APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
           APP_STORE_CONNECT_API_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
-          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
-          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
-          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}
+          # Signing is Xcode-managed; the API key needs App Manager rights so
+          # it can create the certificate and profile on the runner.

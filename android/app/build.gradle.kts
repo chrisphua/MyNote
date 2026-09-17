@@ -11,7 +11,7 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "io.mynote.app"
+        applicationId = "com.chrisphua.mynote"
         minSdk = 26          // covers ~98% of active devices, and gives java.time
         targetSdk = 35
         versionCode = 1

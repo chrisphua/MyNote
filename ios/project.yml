@@ -1,6 +1,6 @@
 name: MyNote
 options:
-  bundleIdPrefix: io.mynote
+  bundleIdPrefix: com.chrisphua
   deploymentTarget:
     iOS: "17.0"
   createIntermediateGroups: true
@@ -15,6 +15,7 @@ packages:
 
 settings:
   base:
+    DEVELOPMENT_TEAM: "9ZM956H7Q9"
     MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
@@ -39,14 +40,14 @@ targets:
       properties:
         # Backup lives in the user's own iCloud Drive, visible in the Files app.
         com.apple.developer.icloud-container-identifiers:
-          - iCloud.io.mynote.app
+          - iCloud.com.chrisphua.MyNote
         com.apple.developer.icloud-services:
           - CloudDocuments
         com.apple.developer.ubiquity-container-identifiers:
-          - iCloud.io.mynote.app
+          - iCloud.com.chrisphua.MyNote
     settings:
       base:
-        PRODUCT_BUNDLE_IDENTIFIER: io.mynote.app
+        PRODUCT_BUNDLE_IDENTIFIER: com.chrisphua.MyNote
         INFOPLIST_FILE: MyNote/Info.plist
         TARGETED_DEVICE_FAMILY: "1,2"
         CODE_SIGN_STYLE: Automatic
@@ -74,7 +75,7 @@ targets:
         # and iCloud plus local-only still work. See docs/DEPLOYMENT.md.
         MyNoteGoogleClientID: ""
         NSUbiquitousContainers:
-          iCloud.io.mynote.app:
+          iCloud.com.chrisphua.MyNote:
             NSUbiquitousContainerIsDocumentScopePublic: true
             NSUbiquitousContainerName: MyNote
             NSUbiquitousContainerSupportedFolderLevels: Any
@@ -82,7 +83,7 @@ targets:
         # Filled in alongside MyNoteGoogleClientID.
         CFBundleURLTypes:
           - CFBundleURLSchemes:
-              - io.mynote.app
+              - com.chrisphua.MyNote
 
   MyNoteTests:
     type: bundle.unit-test

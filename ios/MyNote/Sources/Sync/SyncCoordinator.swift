@@ -248,7 +248,7 @@ final class SyncCoordinator {
                 if wasOffline && self.isOnline { await self.syncNow() }
             }
         }
-        monitor.start(queue: DispatchQueue(label: "io.mynote.network"))
+        monitor.start(queue: DispatchQueue(label: "com.chrisphua.MyNote.network"))
         self.monitor = monitor
     }
 }

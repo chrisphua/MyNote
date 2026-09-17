@@ -1,15 +1,26 @@
 # MyNote iOS release lanes.
 #
-# Authentication is an App Store Connect API key, never an Apple ID password:
-# it survives 2FA, can be scoped, and can be revoked without locking anyone out.
+# Signing is Xcode-managed (automatic), matching how MyPlaylist ships — there is
+# no `match` certificate repo to maintain. Authentication is an App Store Connect
+# API key rather than an Apple ID password: it survives 2FA, can be scoped, and
+# can be revoked without locking anyone out.
+#
+# For a first build you can skip fastlane entirely and use Xcode:
+#   Product -> Archive -> Distribute App -> TestFlight & App Store
 
 default_platform(:ios)
 
-APP_IDENTIFIER = "io.mynote.app".freeze
+APP_IDENTIFIER = "com.chrisphua.MyNote".freeze
+TEAM_ID = "9ZM956H7Q9".freeze
 
 platform :ios do
   before_all do
     setup_ci if ENV["CI"]
+  end
+
+  desc "Run the core package tests"
+  lane :test do
+    sh("cd ../MyNoteCore && swift test")
   end
 
   desc "Build and upload a build to TestFlight"
@@ -26,16 +37,15 @@ platform :ios do
     sh("cd .. && xcodegen generate")
 
     # Build number must be unique per upload; TestFlight rejects a repeat.
+    # `latest_testflight_build_number` returns 0 when the app has never been
+    # uploaded, which is exactly right for the first build.
     increment_build_number(
-      build_number: latest_testflight_build_number(api_key: api_key, app_identifier: APP_IDENTIFIER) + 1,
+      build_number: latest_testflight_build_number(
+        api_key: api_key,
+        app_identifier: APP_IDENTIFIER,
+        initial_build_number: 0
+      ) + 1,
       xcodeproj: "MyNote.xcodeproj"
-    )
-
-    match(
-      type: "appstore",
-      app_identifier: APP_IDENTIFIER,
-      api_key: api_key,
-      readonly: ENV["CI"] ? true : false
     )
 
     build_app(
@@ -44,7 +54,15 @@ platform :ios do
       configuration: "Release",
       export_method: "app-store",
       output_directory: "build",
-      clean: true
+      clean: true,
+      # Let Xcode create and refresh the certificate and profile, including the
+      # iCloud container. Requires the Apple ID to be signed in locally, or the
+      # API key to have App Manager rights in CI.
+      xcargs: "-allowProvisioningUpdates",
+      export_options: {
+        signingStyle: "automatic",
+        teamID: TEAM_ID
+      }
     )
 
     upload_to_testflight(
@@ -55,11 +73,6 @@ platform :ios do
       # (ITSAppUsesNonExemptEncryption = false), so this needs no prompt.
       distribute_external: false
     )
-  end
-
-  desc "Run the core package tests"
-  lane :test do
-    sh("cd ../MyNoteCore && swift test")
   end
 
   desc "Promote the latest TestFlight build to the App Store"

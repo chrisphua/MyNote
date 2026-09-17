@@ -23,7 +23,7 @@
 		<dict>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>io.mynote.app</string>
+				<string>com.chrisphua.MyNote</string>
 			</array>
 		</dict>
 	</array>
@@ -35,7 +35,7 @@
 	<string></string>
 	<key>NSUbiquitousContainers</key>
 	<dict>
-		<key>iCloud.io.mynote.app</key>
+		<key>iCloud.com.chrisphua.MyNote</key>
 		<dict>
 			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
 			<true/>

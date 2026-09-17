@@ -1,2 +1,4 @@
-app_identifier "io.mynote.app"
-# The App Store Connect API key supplies the team, so no Apple ID is needed here.
+app_identifier "com.chrisphua.MyNote"
+team_id "9ZM956H7Q9"
+
+# The App Store Connect API key supplies the rest, so no Apple ID is needed here.

@@ -60,7 +60,7 @@ one that most often blocks a launch at the last moment:
 
 - **Apple:** the *Paid Applications Agreement* must be accepted, and banking and
   tax forms completed, in App Store Connect → Business. Until then
-  `io.mynote.pro` cannot leave "Missing Metadata", and the paywall has no price
+  `com.chrisphua.MyNote.pro` cannot leave "Missing Metadata", and the paywall has no price
   to show.
 - **Google:** a payments profile and merchant account must exist before an
   in-app product can be activated.
@@ -74,7 +74,7 @@ Tax forms in particular can bounce back for correction, so do them first.
 | **Now** | Create both developer accounts. Pay the $25 and the $99. Begin identity verification. |
 | **Now** | Start Apple's Paid Applications Agreement and both payment/tax profiles. |
 | **Now** | If going the organisation route on Google, request the D-U-N-S number. |
-| **While building** | Create `io.mynote.pro` on both stores. Enrol in the Apple Small Business Program. |
+| **While building** | Create `com.chrisphua.MyNote.pro` on both stores. Enrol in the Apple Small Business Program. |
 | **First working build** | Push to Play **closed testing** and start the 14-day clock. Recruit testers. |
 | **While the clock runs** | TestFlight on iOS, store listings, screenshots, privacy policy, support page. |
 | **Day 14+** | Apply for Play production access. |
@@ -116,8 +116,8 @@ and local-only.
 3. Configure the **OAuth consent screen** as External. Add the single scope
    `.../auth/drive.file`.
 4. Create OAuth client ids:
-   - **iOS** — bundle id `io.mynote.app`
-   - **Android** — package `io.mynote.app` plus your signing certificate SHA-1
+   - **iOS** — bundle id `com.chrisphua.MyNote`
+   - **Android** — package `com.chrisphua.mynote` plus your signing certificate SHA-1
    - **Web** — needed as the `serverClientId` for Android's offline access
 
 > **`drive.file` needs no security assessment.** It grants per-file access to
@@ -130,13 +130,13 @@ users.
 
 ### 2. Apple — iCloud and the store
 
-1. Register the bundle id `io.mynote.app` with **iCloud** (CloudKit/Documents)
+1. Register the bundle id `com.chrisphua.MyNote` with **iCloud** (CloudKit/Documents)
    and **In-App Purchase** capabilities.
-2. Create the iCloud container `iCloud.io.mynote.app`.
+2. Create the iCloud container `iCloud.com.chrisphua.MyNote`.
 3. Accept the **Paid Applications Agreement** and complete banking and tax
    details under Business. Until this is done the in-app purchase stays in
    "Missing Metadata" and the paywall has no price to show.
-4. Create the in-app purchase `io.mynote.pro`, non-consumable, $14.99.
+4. Create the in-app purchase `com.chrisphua.MyNote.pro`, non-consumable, $14.99.
 5. **Enrol in the Small Business Program.** 15% instead of 30%. Do this before
    your first sale.
 6. Create an **App Store Connect API key** (Users and Access → Integrations),
@@ -148,10 +148,10 @@ users.
 [Launch timeline](#launch-timeline--start-this-before-the-app-is-finished) —
 it adds at least two weeks before you can publish, so start it early.
 
-1. Create the app with package `io.mynote.app`.
+1. Create the app with package `com.chrisphua.mynote`.
 2. Set up the **payments profile** — an in-app product cannot be activated
    without one.
-3. Create the in-app product `io.mynote.pro`, one-time, $14.99.
+3. Create the in-app product `com.chrisphua.mynote.pro`, one-time, $14.99.
 4. Create a **service account** with the *Android Publisher* role for CI
    uploads.
 
@@ -174,7 +174,6 @@ Repository → Settings → Secrets and variables → Actions.
 | `ANDROID_GOOGLE_OAUTH_CLIENT_ID` | the **Web** OAuth client id (Android needs it for offline access) |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | App Store Connect API key |
 | `ASC_PRIVATE_KEY` | `base64 -i AuthKey_XXXX.p8` |
-| `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_GIT_BASIC_AUTHORIZATION` | fastlane match certificate repo |
 | `ANDROID_KEYSTORE_BASE64` | `base64 -i release.jks` |
 | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | your keystore |
 | `PLAY_SERVICE_ACCOUNT_JSON` | the service account JSON, verbatim |
@@ -182,16 +181,20 @@ Repository → Settings → Secrets and variables → Actions.
 Create two **environments**, `ios-release` and `android-release`, and add a
 required reviewer to each so a store submission is always a deliberate act.
 
-### 5. Signing certificates (iOS)
+### 5. Signing (iOS)
 
-```bash
-cd ios
-bundle install
-bundle exec fastlane match appstore
-```
+Signing is **Xcode-managed**, matching how MyPlaylist ships — there is no
+`match` repo to maintain. Xcode creates the distribution certificate, the App ID
+and the iCloud container on first archive, provided the Apple ID that owns the
+team is signed in under Xcode → Settings → Accounts.
 
-`match` keeps certificates in a private git repo so CI and your laptop use the
-same ones.
+For a first build, skip fastlane entirely:
+
+> Xcode → **Product → Archive** → **Distribute App** → **TestFlight & App Store**
+
+After that, `bundle exec fastlane beta` does the same thing with a build-number
+bump. In CI, the App Store Connect API key needs **App Manager** rights so it can
+create the certificate and profile on the runner.
 
 ---
 

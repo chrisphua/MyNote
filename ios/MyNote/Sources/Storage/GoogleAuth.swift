@@ -22,7 +22,7 @@ final class GoogleAuth: NSObject {
 
     private let clientId: String
     private let redirectURI: String
-    private let keychain = KeychainStore(service: "io.mynote.google")
+    private let keychain = KeychainStore(service: "com.chrisphua.MyNote.google")
 
     private var accessToken: String?
     private var accessTokenExpiry: Date = .distantPast

@@ -11,7 +11,7 @@ import MyNoteCore
 @Observable
 @MainActor
 final class PurchaseManager {
-    static let proProductId = "io.mynote.pro"
+    static let proProductId = "com.chrisphua.MyNote.pro"
     static let proEntitlement = "pro"
 
     private(set) var product: Product?

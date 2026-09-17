@@ -4,7 +4,7 @@
 
 **MyNote Pro — $14.99, paid once.** Unlocks custom themes and cloud backup.
 
-Product id on both stores: `io.mynote.pro`, a non-consumable / one-time purchase.
+Product id on both stores: `com.chrisphua.MyNote.pro`, a non-consumable / one-time purchase.
 
 Everything else is free forever: unlimited notes, every block type, all three
 built-in themes, search, and the whole editor.
