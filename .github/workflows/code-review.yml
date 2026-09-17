@@ -1,0 +1,37 @@
+name: Code review
+
+on:
+  pull_request:
+    types: [opened, synchronize, ready_for_review]
+
+concurrency:
+  group: review-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  claude-review:
+    name: Automated review
+    # Drafts are still being worked on; reviewing them is noise.
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The reviewer diffs against the base, so it needs the history.
+          fetch-depth: 0
+
+      - name: Review the diff
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            Review this pull request using the instructions in
+            .claude/agents/code-reviewer.md.
+
+            Post your findings as a single PR comment. Report only defects you
+            can point at in the diff — a clean review is a valid result.
+          claude_args: '--allowed-tools Bash,Read,Grep,Glob'

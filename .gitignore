@@ -1,0 +1,41 @@
+# ---- secrets: never commit these -------------------------------------------
+**/GoogleService-Info.plist
+**/google-services.json
+**/*.p8
+**/*.p12
+**/*.jks
+**/*.keystore
+.env
+.env.*
+!.env.example
+backend/.dev.vars
+fastlane/report.xml
+fastlane/*.log
+
+# ---- generated --------------------------------------------------------------
+ios/MyNote.xcodeproj/
+ios/build/
+ios/**/*.ipa
+ios/**/*.dSYM.zip
+.build/
+DerivedData/
+*.xcuserdatad
+xcuserdata/
+
+android/.gradle/
+android/build/
+android/**/build/
+android/local.properties
+*.apk
+*.aab
+
+backend/node_modules/
+backend/.wrangler/
+backend/dist/
+node_modules/
+
+# ---- os / editor ------------------------------------------------------------
+.DS_Store
+*.swp
+.idea/
+*.iml

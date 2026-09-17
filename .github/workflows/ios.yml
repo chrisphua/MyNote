@@ -1,0 +1,110 @@
+name: iOS
+
+on:
+  push:
+    branches: [main]
+    # Releases are cut by tagging, so a merge to main never ships by itself.
+    tags: ['ios-v*']
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  pull_request:
+    paths: ['ios/**', '.github/workflows/ios.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  core-tests:
+    name: Core package tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+      # Fast, no simulator: this is where the sync engine is actually verified.
+      - name: Test MyNoteCore
+        working-directory: ios/MyNoteCore
+        run: swift test
+
+  build:
+    name: Build app
+    needs: core-tests
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Cache SwiftPM
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Developer/Xcode/DerivedData/**/SourcePackages
+          key: spm-${{ runner.os }}-${{ hashFiles('ios/project.yml', 'ios/MyNoteCore/Package.swift') }}
+
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+
+      # Absent on PRs from forks; the app detects this and runs local-only.
+      # Absent on PRs from forks; the app detects this and runs local-only.
+      - name: Write Firebase config
+        working-directory: ios
+        env:
+          FIREBASE_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
+        run: |
+          if [ -n "$FIREBASE_PLIST" ]; then
+            echo "$FIREBASE_PLIST" | base64 --decode > MyNote/Resources/GoogleService-Info.plist
+          else
+            echo "No Firebase config available; building in local-only mode."
+          fi
+
+      - name: Build
+        working-directory: ios
+        run: |
+          xcodebuild -project MyNote.xcodeproj -scheme MyNote \
+            -destination 'generic/platform=iOS Simulator' \
+            CODE_SIGNING_ALLOWED=NO build
+
+  testflight:
+    name: Upload to TestFlight
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/ios-v')
+    runs-on: macos-15
+    environment: ios-release
+    steps:
+      - uses: actions/checkout@v4
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode_16.2.app
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate project
+        working-directory: ios
+        run: xcodegen generate
+
+      - name: Write Firebase config
+        working-directory: ios
+        env:
+          FIREBASE_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
+        run: echo "$FIREBASE_PLIST" | base64 --decode > MyNote/Resources/GoogleService-Info.plist
+
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '3.3'
+          bundler-cache: true
+          working-directory: ios
+
+      - name: Upload build
+        working-directory: ios
+        run: bundle exec fastlane beta
+        env:
+          # App Store Connect API key: no 2FA prompts, no shared Apple ID password.
+          APP_STORE_CONNECT_API_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          APP_STORE_CONNECT_API_KEY: ${{ secrets.ASC_PRIVATE_KEY }}
+          MATCH_PASSWORD: ${{ secrets.MATCH_PASSWORD }}
+          MATCH_GIT_URL: ${{ secrets.MATCH_GIT_URL }}
+          MATCH_GIT_BASIC_AUTHORIZATION: ${{ secrets.MATCH_GIT_BASIC_AUTHORIZATION }}

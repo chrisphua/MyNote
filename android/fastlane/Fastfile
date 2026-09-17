@@ -1,0 +1,42 @@
+# MyNote Android release lanes.
+#
+# CI publishes with r0adkll/upload-google-play; these lanes are the same steps
+# for running a release by hand when CI is unavailable.
+
+default_platform(:android)
+
+platform :android do
+  desc "Run the core unit tests"
+  lane :test do
+    gradle(task: "core:test")
+  end
+
+  desc "Build a signed release bundle and upload to internal testing"
+  lane :beta do
+    gradle(task: "clean")
+    gradle(
+      task: "app:bundle",
+      build_type: "Release"
+    )
+    upload_to_play_store(
+      track: "internal",
+      release_status: "completed",
+      aab: "app/build/outputs/bundle/release/app-release.aab",
+      skip_upload_metadata: true,
+      skip_upload_images: true,
+      skip_upload_screenshots: true
+    )
+  end
+
+  desc "Promote the internal build to production"
+  lane :promote do
+    upload_to_play_store(
+      track: "internal",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_metadata: false,
+      # A staged rollout limits the blast radius of a bad build.
+      rollout: "0.1"
+    )
+  end
+end

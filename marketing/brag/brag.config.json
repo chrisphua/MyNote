@@ -1,0 +1,52 @@
+{
+  "$comment": "Drives latent-spaces/brag. Keys follow brag's own schema — check its README after upgrading, and treat this as our content, not its contract.",
+  "product": {
+    "name": "MyNote",
+    "tagline": "Notes that work offline, in a theme you actually chose.",
+    "url": "https://mynote.io",
+    "platforms": ["ios", "android"],
+    "category": "Productivity",
+    "sourceOfTruth": "product.md",
+    "audiences": "audiences.md"
+  },
+  "voice": {
+    "tone": "plain, concrete, unhurried",
+    "avoid": [
+      "revolutionary", "game-changing", "seamless", "effortless",
+      "powerful", "supercharge", "unleash", "AI-powered"
+    ],
+    "rules": [
+      "Lead with what it does, not how it feels.",
+      "Every claim must be checkable in the shipped app.",
+      "Never imply end-to-end encryption, real-time collaboration, or AI features — none exist.",
+      "Say the price plainly. Never write 'free' without saying what is paid.",
+      "Short sentences. No exclamation marks."
+    ]
+  },
+  "targets": {
+    "app-store": {
+      "assets": ["name", "subtitle", "keywords", "description", "whats-new", "promo-text"],
+      "limits": { "name": 30, "subtitle": 30, "keywords": 100, "description": 4000, "promo-text": 170 }
+    },
+    "play-store": {
+      "assets": ["title", "short-description", "full-description"],
+      "limits": { "title": 30, "short-description": 80, "full-description": 4000 }
+    },
+    "tiktok": {
+      "assets": ["hooks", "scripts", "captions", "hashtags"],
+      "format": "9:16",
+      "duration": "15-30s",
+      "count": 5
+    },
+    "facebook": {
+      "assets": ["primary-text", "headline", "description"],
+      "limits": { "primary-text": 125, "headline": 40, "description": 30 },
+      "count": 3
+    }
+  },
+  "output": {
+    "directory": "outputs",
+    "format": "markdown",
+    "reviewRequired": true
+  }
+}
