@@ -2,7 +2,7 @@
   "$comment": "Drives latent-spaces/brag. Keys follow brag's own schema — check its README after upgrading, and treat this as our content, not its contract.",
   "product": {
     "name": "MyNote",
-    "tagline": "Notes that work offline, in a theme you actually chose.",
+    "tagline": "Your notes, in your storage, in a theme you chose.",
     "url": "https://mynote.io",
     "platforms": ["ios", "android"],
     "category": "Productivity",
@@ -19,7 +19,8 @@
       "Lead with what it does, not how it feels.",
       "Every claim must be checkable in the shipped app.",
       "Never imply end-to-end encryption, real-time collaboration, or AI features — none exist.",
-      "Say the price plainly. Never write 'free' without saying what is paid.",
+      "Never imply iCloud Drive syncs to Android. It cannot. Google Drive is the cross-platform option.",
+      "Say the price plainly: $14.99 once, no subscription. Never write 'free' without saying what is paid.",
       "Short sentences. No exclamation marks."
     ]
   },

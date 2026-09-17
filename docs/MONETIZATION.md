@@ -1,132 +1,98 @@
 # Monetization
 
+## One product
+
+**MyNote Pro — $14.99, paid once.** Unlocks custom themes and cloud backup.
+
+Product id on both stores: `io.mynote.pro`, a non-consumable / one-time purchase.
+
+Everything else is free forever: unlimited notes, every block type, all three
+built-in themes, search, and the whole editor.
+
+## Why one-time, and why not a subscription
+
+There is no server, so there is no recurring cost. Charging monthly for software
+with no monthly cost is asking for money to cover an expense that does not
+exist, and people can tell.
+
+It also deletes a great deal of code and a whole category of bugs: no renewals,
+no grace periods, no billing-retry handling, no expiry checks, no subscription
+state machine, no webhooks, and nothing to get wrong when someone's card expires
+over a weekend.
+
+The trade: no recurring revenue. At $114/year of running costs, that is fine —
+see [COSTS.md](COSTS.md).
+
 ## What is free, and why
 
-Unlimited notes, every block type, all three built-in themes, search, and the
-entire editor — free, with no account, forever.
+A note app people cannot trust with their writing is worthless, and a trial that
+expires on someone's notes is hostile. What is sold is *convenience on top of a
+complete app*: your own visual design, and your notes on more than one device.
 
-That is a deliberate position, not generosity. A note app people cannot trust
-with their writing is worthless, and a trial that expires on someone's notes is
-hostile. What is sold is *convenience on top of a complete app*: your own visual
-design, and your notes on more than one device.
-
-It is also the reason the margin works. A free user never touches the backend, so
-a hundred thousand of them cost exactly nothing.
-
-## Products
-
-Identical ids on both stores, so one row in `backend/src/products.ts` serves an
-Apple and a Google purchase and the mapping cannot drift.
-
-| Product id | Type | Price | Unlocks |
-|---|---|---|---|
-| `io.mynote.themes.lifetime` | Non-consumable / one-time | $9.99 | `theme_pro` |
-| `io.mynote.sync.monthly` | Auto-renewable / subscription | $2.99/mo | `cloud_sync` |
-| `io.mynote.sync.yearly` | Auto-renewable / subscription | $19.99/yr | `cloud_sync` |
-
-**Two products, not one bundle.** Someone who wants their own colours should not
-be pushed into a recurring charge, and someone who wants sync should not pay for
-theming they will never open. Bundling would raise ARPU and lower conversion; the
-split also matches the actual cost structure — themes cost nothing to serve,
-sync costs about a cent a month.
-
-**Why sync is a subscription and themes are not.** Sync has a recurring cost, so
-it needs recurring revenue. Themes are pure software: charge once, serve forever.
-A lifetime unlock for something with an ongoing cost is a slow-motion loss.
-
-## Cross-platform entitlement
+## How a purchase crosses platforms
 
 The requirement: *pay on either platform, unlocked on both.*
 
-```
-Apple IAP   ──→ transactionId  ──┐
-                                 ├──→ Worker ──→ verify with the store ──→ D1
-Play Billing ──→ purchaseToken ──┘                                          │
-                                                                            ▼
-                                                  entitlements(uid, entitlement)
-```
+With no server there is nowhere neutral to record that someone paid. So the
+receipt travels with the notes:
 
-The whole mechanism is one line of schema:
-
-```sql
-PRIMARY KEY (uid, entitlement)
+```
+Buy on iOS  ──→ StoreKit verifies ──→ license.json written into the user's Drive
+                                              │
+Install on Android ──→ connect same Drive ──→ read license.json ──→ Pro unlocked
 ```
 
-No platform column is consulted on read. An entitlement belongs to the Firebase
-account, so signing in on Android surfaces an iOS purchase with no migration, no
-linking step, and no code that knows which store paid.
+**Free users can connect a folder.** They merge what is there and upload
+nothing. That is deliberate: without read access there would be no way to
+discover a licence bought on the other platform, and the chicken-and-egg would
+make cross-platform purchase impossible.
 
-**Purchases cannot be shared.** `iap_links` binds one `original_txn_id` to one
-`uid` the first time it is seen; a second account presenting the same receipt
-gets `409 purchase_already_linked`.
+**iCloud cannot do this.** Apple publishes no iCloud Drive API for Android, so a
+purchase only travels between platforms via Google Drive. Someone on iCloud who
+later buys an Android phone needs to restore the purchase through Play, or
+switch to Drive.
 
-## How verification works
+## The threat model, stated plainly
 
-The client never asserts an entitlement. It sends a **lookup key** — Apple's
-`transactionId` or Play's `purchaseToken` — and the Worker re-reads authoritative
-state from the store's own API.
-
-**Apple.** The Worker signs an ES256 JWT with the App Store Connect key and calls
-`GET /inApps/v1/transactions/{id}`. The answer arrives over TLS from Apple's host
-on a connection authenticated with our private key, so a forged id yields a 404
-rather than a forged entitlement. This is also why we never had to implement
-X.509 chain validation inside a Worker.
-
-**Google.** The Worker exchanges a service-account JWT for an OAuth token and
-calls the Play Developer API (`subscriptionsv2` or `products`), then
-**acknowledges** the purchase. Acknowledging is not optional: Play auto-refunds
-anything left unacknowledged for three days.
-
-**Webhooks are untrusted.** App Store Server Notifications and Play RTDN only
-tell us *which* purchase changed; the Worker re-fetches the truth before acting.
-A spoofed webhook can at worst trigger a refresh that confirms reality.
-
-Every notification is logged raw to `iap_events` for refund and dispute
-forensics.
-
-## Subscription lifecycle
-
-| Event | Handling |
+| Path | Strength |
 |---|---|
-| Purchase | Verified, entitlement granted, acknowledged |
-| Renewal | Store notification → re-fetch → `expires_at` extended |
-| Cancellation | Stays active until `expires_at`; they paid for the period |
-| Billing failure | **3-day grace period**, status `grace`, access continues |
-| Expiry | Access ends. Notes stay on-device; nothing is deleted |
-| Refund / chargeback | Revoked immediately via the voided-purchase notification |
-| Upgrade monthly → yearly | Replaces the row; `PRIMARY KEY (uid, entitlement)` prevents duplicates |
+| StoreKit `Transaction.currentEntitlements` (iOS) | **Strong.** Apple verifies its own signature; we trust the OS. |
+| Play `queryPurchasesAsync` (Android) | **Strong.** Play verifies its own purchase; we acknowledge it. |
+| `license.json` in the folder | **Weak by design.** It sits in storage the user controls, so a determined person could forge it. |
 
-The grace period exists because a card expiring should not lock someone out of
-their own notes over a weekend.
+That last row is a deliberate choice, not an oversight. Forging the file buys
+someone a one-time purchase they could have made for the price of a sandwich,
+and the alternative is running a server purely to police it — reintroducing
+hosting costs, an account system, and custody of everyone's notes, to protect
+$12.74. Not worth it.
 
-## What happens when sync lapses
+Entitlements are combined as a **union**, never an intersection: a purchase made
+on the other platform exists only in the file, and one made here may not be
+uploaded yet, so neither may revoke the other.
 
-Nothing is deleted and nothing is held hostage. Notes remain fully readable and
-editable on every device that already has them; only the syncing stops, and the
-status line says so. Attachments already downloaded stay.
+## Refunds
 
-Holding someone's writing hostage would be both wrong and a support nightmare.
+Both stores allow refunds, and there is no server to revoke an entitlement.
+StoreKit reports a revocation and iOS drops Pro; Play does the same on the
+device that asks. A device that never checks in again may keep Pro. At this
+price, engineering against that costs more than it saves.
 
 ## Store review notes
 
 Both stores reject on these, and all are handled:
 
-- **Restore purchases** is visible in Settings and on the paywall (required).
-- **Subscription terms** — renewal, price, period and how to cancel — are on the
-  paywall itself, not buried (required).
-- **Sign in with Apple** is offered wherever Google sign-in is (Apple requires it).
-- **The app is usable without an account.** Gating a note app behind a login is a
-  common rejection.
+- **Restore purchase** is visible in Settings and on the paywall (required).
+- **The app is usable without an account.** Gating a note app behind a login is
+  a common rejection — MyNote has no accounts at all.
 - **Privacy policy and terms** are linked from Settings and the paywall.
-- **Prices come from the store**, never hard-coded, so every currency is right.
+- **The price comes from the store**, never hard-coded, so every currency is right.
+- **No subscription terms needed**, because there is no subscription.
+- Google Drive uses `drive.file` only — per-file access to files the app
+  created. Requesting `drive` or `drive.readonly` would trigger a restricted
+  scope security assessment.
 
 ## Adding a product later
 
-1. Create it in both consoles with the **same product id**.
-2. Add one row to `PRODUCTS` in `backend/src/products.ts`.
-3. Add the id to `PurchaseManager.ProductID` (iOS) and `BillingManager.Products`
-   (Android).
-4. Add a card to both paywalls.
-
-Nothing else changes: verification, entitlement storage and cross-platform
-unlocking are all generic over the product table.
+The licence file already carries an `entitlements` **list**, so splitting Pro
+into separate purchases later needs no new file format — add the product id,
+map it to a new entitlement string, and gate on it.

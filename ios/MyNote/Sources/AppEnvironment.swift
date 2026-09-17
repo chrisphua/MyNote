@@ -5,35 +5,30 @@ import MyNoteCore
 
 /// Wires the app's long-lived objects together.
 ///
-/// Deliberately constructed eagerly at launch so the editor never has to wait on
-/// setup: notes are local files first, and the network is an optional extra.
+/// Constructed eagerly at launch so the editor never waits on setup: notes are
+/// local files first, and any cloud folder is an optional extra.
 @Observable
 @MainActor
 final class AppEnvironment {
     let modelContainer: ModelContainer
     let store: SwiftDataStore
-    let auth: AuthManager
     let purchases: PurchaseManager
     let themeManager: ThemeManager
     let syncCoordinator: SyncCoordinator
-    let api: APIClient
+    let googleAuth: GoogleAuth
 
-    /// Which account the local database currently belongs to. Local rows carry
-    /// no uid, so this is how we notice the account changed underneath them.
-    private static let ownerKey = "local.ownerUid"
-
-    /// Base URL of the Worker. Overridden per build configuration.
-    static var apiBaseURL: URL {
-        if let raw = Bundle.main.object(forInfoDictionaryKey: "MyNoteAPIBaseURL") as? String,
-           let url = URL(string: raw) {
-            return url
-        }
-        return URL(string: "https://mynote-api.workers.dev")!
+    /// OAuth client id for Google Drive, from `Info.plist`. Absent in a fresh
+    /// clone, which simply means Drive is not offered — iCloud and local-only
+    /// still work, and the app still builds and runs.
+    static var googleClientId: String {
+        Bundle.main.object(forInfoDictionaryKey: "MyNoteGoogleClientID") as? String ?? ""
     }
+
+    static var isGoogleDriveConfigured: Bool { !googleClientId.isEmpty }
 
     init() {
         let schema = Schema([NoteEntity.self, BlockEntity.self, ThemeEntity.self,
-                             OutboxEntry.self, SyncState.self])
+                             RemoteVersion.self, SyncMeta.self])
         let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
         do {
             modelContainer = try ModelContainer(for: schema, configurations: config)
@@ -48,91 +43,53 @@ final class AppEnvironment {
         }
 
         store = SwiftDataStore(modelContainer: modelContainer)
-        auth = AuthManager()
         purchases = PurchaseManager()
         themeManager = ThemeManager()
+        googleAuth = GoogleAuth(clientId: Self.googleClientId)
+        syncCoordinator = SyncCoordinator(store: store, googleAuth: googleAuth)
 
-        let authRef = auth
-        api = APIClient(baseURL: Self.apiBaseURL) { [authRef] in
-            try await authRef.idToken()
-        }
-        syncCoordinator = SyncCoordinator(store: store, api: api, purchases: purchases)
-
-        // StoreKit confirms a purchase happened; the server is what makes it
-        // portable. Without this the transaction is never reported, no
-        // entitlement row is ever written, and a paying iOS user gets 402 from
-        // sync forever.
-        let apiRef = api
-        purchases.configure { [apiRef] transactionId in
-            try await apiRef.verifyAppleTransaction(id: transactionId)
+        // A purchase on this device is written into the folder so the user's
+        // other platform picks it up. There is no server to tell.
+        let coordinator = syncCoordinator
+        purchases.onPurchase = { license in
+            Task { await coordinator.writeLicense(license) }
         }
     }
 
-    /// Run once the UI is up: adopt the server's view of what this account owns,
-    /// reconcile the local database with who is signed in, and load any themes
-    /// that arrived from another device.
+    /// Run once the UI is up.
     func start() async {
         await purchases.loadProducts()
         await purchases.refreshLocalEntitlements()
-        await reconcileAccount()
-        await refreshEntitlements()
+        applyEntitlements()
+
+        await syncCoordinator.restoreProvider()
+
+        // Read the licence *before* deciding whether uploads are allowed: this
+        // is how a purchase made on Android unlocks the iPhone.
+        purchases.applyRemoteLicense(await syncCoordinator.readLicense())
+        applyEntitlements()
+
         loadSyncedThemes()
-        await syncCoordinator.refreshPendingCount()
-        await syncCoordinator.syncNow()
+        await syncCoordinator.refreshPending()
     }
 
-    /// The server is authoritative across platforms — it is the only place that
-    /// knows about a purchase made on Android. Called at launch and whenever the
-    /// signed-in account changes.
-    func refreshEntitlements() async {
-        if case .signedIn(let uid, _) = auth.status {
-            purchases.setBuyer(uid: uid)
-        } else {
-            purchases.setBuyer(uid: nil)
-        }
-        guard auth.isSignedIn else { return }
-        do {
-            purchases.applyServerEntitlements(try await api.entitlements())
-        } catch {
-            // Offline, or the account has none yet. StoreKit's local view still
-            // applies, so a purchase made on this device keeps working.
-        }
-        themeManager.canEdit = purchases.canCustomizeThemes
+    /// Keep the theme gate and the upload gate in step with what the user owns.
+    func applyEntitlements() {
+        themeManager.canEdit = purchases.isPro
+        syncCoordinator.uploadsAllowed = purchases.isPro
     }
 
-    /// Wipe local data when the signed-in account changes.
-    ///
-    /// Local rows carry no uid. Without this, signing out of A and into B would
-    /// push A's queued notes into B's account, and B would inherit A's cursor
-    /// and never pull its own records.
-    func reconcileAccount() async {
-        let defaults = UserDefaults.standard
-        let previous = defaults.string(forKey: Self.ownerKey)
-        let current: String? = {
-            if case .signedIn(let uid, _) = auth.status { return uid }
-            return nil
-        }()
-
-        // Signing out on its own leaves the data with its owner, so it is still
-        // there when they sign back in. Only a *different* account wipes.
-        guard let current, current != previous else {
-            if let current { defaults.set(current, forKey: Self.ownerKey) }
-            return
-        }
-
-        if previous != nil {
-            try? await store.clearAll()
-            themeManager.forgetSyncedThemes()
-        }
-        defaults.set(current, forKey: Self.ownerKey)
-    }
-
-    /// Themes sync as ordinary records, but the theme picker reads its own
-    /// store, so they are handed across explicitly.
     func loadSyncedThemes() {
         Task {
             guard let specs = try? await store.syncedThemes() else { return }
             themeManager.mergeSynced(specs)
         }
+    }
+
+    /// Delete every note on this device. Used when disconnecting storage, and
+    /// offered explicitly in Settings.
+    func eraseLocalData() async {
+        try? await store.clearAll()
+        themeManager.forgetSyncedThemes()
     }
 }

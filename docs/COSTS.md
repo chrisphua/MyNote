@@ -1,29 +1,22 @@
 # Costs and margin
 
-**Prices checked September 2026. Verify against the providers before relying on
-them for a decision — Apple, Google and Cloudflare all change terms.**
+**Prices checked September 2026. Verify against Apple and Google before relying
+on them for a decision.**
 
-The short version: serving one syncing user costs about **one cent a month**, and
-roughly **six paying subscribers** covers every fixed cost you have. The business
-risk here is getting users, not paying for them.
+The short version: running MyNote costs **$114 a year** and nothing else. There
+is no per-user cost, no bandwidth bill, and no bill that grows with success —
+because there is no server.
 
-## Why it is this cheap
+## Why there is no infrastructure cost
 
-Three structural decisions, in order of how much they matter.
+Backups go into storage the user already pays for. A hundred users, a hundred
+thousand users, a user with 40 GB of notes: all of it lands in their Google
+Drive or their iCloud Drive, and none of it touches anything we own.
 
-**1. Free users never touch the backend.** Sync is the paid feature, so a free
-user's notes live entirely on their device. A hundred thousand free users cost
-exactly $0. Most note apps fail here: they sync everyone, then discover the free
-tier is the whole bill.
-
-**2. R2 charges nothing for egress.** This is the one that would have sunk an S3
-build. A sync app's defining traffic pattern is users re-downloading their own
-attachments onto a new device — pure egress. S3 charges ~$0.09/GB for that; R2
-charges zero. At 500 GB/month of downloads that is the difference between $45 and
-$0.
-
-**3. Notes are tiny.** A heavy user with a thousand notes is a few megabytes of
-text. The storage that costs real money is images, and those are capped by quota.
+This also removes the entire class of problem that dominated the earlier design:
+no egress bills, no storage quota to enforce, no rate limiting to stop someone
+running up a bill, no database to migrate, no secrets to rotate, and nothing to
+be breached. There is no copy of anyone's notes on our side to lose.
 
 ## Fixed costs
 
@@ -32,97 +25,81 @@ text. The storage that costs real money is images, and those are capped by quota
 | Apple Developer Program | **$99 / year** | Unavoidable to ship on iOS |
 | Google Play Developer | **$25 once** | One-time, for the life of the account |
 | Domain | ~**$15 / year** | For the privacy policy and support page, which both stores require |
-| Cloudflare Workers | **$0** → $5/mo | Free to 100k requests/day; paid plan needed past roughly 300 active syncing users |
-| Cloudflare D1 | **$0** | 5 GB and generous row limits included on the Workers plan |
-| Cloudflare R2 | **$0** → $0.015/GB/mo | First 10 GB free, and **no egress charge** at any size |
-| Firebase Auth | **$0** | Free for Google, Apple and email sign-in |
+| Servers, database, storage, bandwidth | **$0** | There are none |
 
-**Year one, pre-revenue: about $139.** After the free tiers are exhausted, about
-$174/year (≈ $14.50/month).
+**Year one: about $139. Every year after: about $114**, or $9.50 a month.
 
 ## Store commission
 
-Both stores take **15%** for a small developer — Apple through the Small Business
-Program (under $1M/year, **you must enrol**, it is not automatic) and Google
-through its standard first-$1M rate. Without Apple's programme it is 30% there.
+Both stores take **15%** for a small developer — Apple through the Small
+Business Program (under $1M/year, **you must enrol**, it is not automatic) and
+Google through its standard first-$1M rate.
 
-| Product | Price | At 15% | At 30% |
+| | Price | At 15% | At 30% |
 |---|---|---|---|
-| Custom themes (one-time) | $9.99 | **$8.49** | $6.99 |
-| Cloud sync (monthly) | $2.99 | **$2.54** | $2.09 |
-| Cloud sync (yearly) | $19.99 | **$16.99** | $13.99 |
+| MyNote Pro | $14.99 | **$12.74** | $10.49 |
 
-The stores collect and remit VAT/GST themselves, so these are what actually
+The stores collect and remit VAT/GST themselves, so that is what actually
 reaches you before income tax.
 
 > **Enrol in the Apple Small Business Program before your first sale.** It is a
-> form, it takes minutes, and it is worth $1.50 on every $9.99 sale.
-
-## What one syncing user costs per month
-
-Assuming an active user: ~300 sync requests a day, a few thousand row writes, and
-50 MB of attachments.
-
-| Resource | Usage | Cost |
-|---|---|---|
-| Worker requests | ~9,000/mo | $0.0027 |
-| D1 row writes | ~3,000/mo | $0.0030 |
-| D1 row reads | ~30,000/mo | ~$0.0000 |
-| R2 storage | 50 MB | $0.0008 |
-| R2 egress | any | **$0.00** |
-| **Total** | | **≈ $0.007** |
-
-Call it **$0.01/month** with headroom.
-
-Against $2.54 net on a monthly subscription that is a **99.6% gross margin**. Even
-a user who fills their entire 1 GB quota costs $0.015/month in storage — still
-under 1% of what they pay. There is no plausible individual user who is
-unprofitable.
+> form, it takes minutes, and it is worth $2.25 on every sale.
 
 ## Break-even
 
-Fixed costs of ~$14.50/month are covered by:
+At $12.74 net per sale, the $114 annual cost is covered by **nine sales a year**.
+Year one, with the $25 Play fee, it is **eleven**.
 
-- **6 monthly subscribers** ($2.54 each), or
-- **11 yearly subscribers** over the year ($16.99 each), or
-- **21 theme unlocks** in year one ($8.49 each)
+After that, every sale is essentially pure margin. Not 99% — **100%**, because
+the marginal cost of one more user is genuinely zero.
 
 ## At scale
 
-| Paying sync users | Net revenue/mo | Infra/mo | Profit/mo |
+| Sales / year | Net revenue | Costs | Profit |
 |---|---|---|---|
-| 10 | $25 | $0 (free tier) | **$13** |
-| 100 | $254 | $0–5 | **$235** |
-| 1,000 | $2,541 | ~$15 | **$2,512** |
-| 10,000 | $25,410 | ~$50 | **$25,346** |
+| 10 | $127 | $114 | **$13** |
+| 100 | $1,274 | $114 | **$1,160** |
+| 1,000 | $12,740 | $114 | **$12,626** |
+| 10,000 | $127,400 | $114 | **$127,286** |
 
-Infrastructure is a rounding error at every size. Assumes monthly subscribers at
-$2.99 and the $14.50/month fixed cost.
+The cost column does not move, because nothing in it scales with users.
+
+## Why one-time rather than a subscription
+
+The earlier design hosted storage, so it had a recurring cost and needed
+recurring revenue: a lifetime price would have decayed into a loss as a paying
+user's lifetime grew.
+
+That reason is gone. Charging monthly for software with no monthly cost is
+asking for money to cover an expense that does not exist, and people can tell.
+A single purchase is also an easier sell, converts better, and removes
+subscription management, grace periods, billing-retry handling and renewal
+webhooks from the codebase entirely.
+
+The trade is real: no recurring revenue, so growth has to come from new sales
+rather than a compounding base. At these costs, that is an acceptable trade.
 
 ## What actually threatens the margin
 
 Ranked by how likely each is to bite.
 
-1. **Nobody buys.** The only real risk. At a 2% free-to-paid conversion you need
-   ~300 downloads to reach break-even, which is achievable, but it is still the
-   whole game. This is where the marketing tooling in
-   [MARKETING.md](MARKETING.md) earns its place.
+1. **Nobody buys.** Now the *only* risk. Nine sales a year is a low bar, but it
+   is still the whole game, and there is no recurring revenue to smooth a slow
+   month. This is where [MARKETING.md](MARKETING.md) earns its place.
 2. **Apple's 30% instead of 15%.** Forgetting to enrol in the Small Business
-   Program costs 15% of gross revenue forever. Margin survives; it still stings.
-3. **Refund abuse.** A refunded purchase is revoked server-side, and Play
-   auto-refunds anything left unacknowledged for three days — which is why the
-   backend acknowledges immediately.
-4. **A user scripting the sync API.** Rate limiting is not implemented yet. A
-   paid account hammering `/v1/sync` could run up Worker requests. Worth adding
-   before public launch; see the open item in [ARCHITECTURE.md](ARCHITECTURE.md).
-5. **Attachment storage growth.** Capped at 1 GB per paid account and enforced
-   server-side before the write, so it cannot run away.
+   Program costs 15% of gross revenue forever.
+3. **Refunds.** Both stores allow them, and a refunded purchase is gone. There
+   is no server to revoke the entitlement, so a refunded user may keep Pro on a
+   device that never checks in again. At this price it is not worth engineering
+   against.
+4. **Support load.** The real cost of this design is not money, it is time:
+   "why won't my iPhone see my Android notes" has a genuine answer (they chose
+   iCloud) and it will be asked. Hence the storage picker explaining it up front.
 
 ## Things deliberately not bought
 
 | Tempting | Cost | Why not |
 |---|---|---|
-| RevenueCat | free, then 1% of revenue | Receipt validation is ~350 lines we already own. 1% forever is real money and the logic rarely changes. |
-| Supabase | $25/mo flat past free tier | Would be a fixed cost before the first customer, and it bills storage egress. |
-| Firestore | per-document reads | A block editor generates enormous read counts; costs would scale unpredictably with *editing*, not with users. |
-| Sentry / analytics | $0–26/mo | Worth adding once there are users to learn from. Not on day one. |
+| Any backend | $5–25/mo | The entire point. It would also make us responsible for other people's notes. |
+| RevenueCat | free, then 1% | Nothing left to validate: StoreKit and Play verify their own purchases, and the cross-platform hand-off is a file in the user's folder. |
+| Crash reporting | $0–26/mo | Worth adding once there are users. Not on day one. |

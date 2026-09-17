@@ -1,6 +1,9 @@
 package io.mynote.app.ui
 
 import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -14,7 +17,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
@@ -24,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.HorizontalDivider
@@ -37,14 +40,18 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.mynote.app.AppContainer
-import io.mynote.app.auth.AuthStatus
+import io.mynote.app.sync.StorageProvider
 import io.mynote.app.theme.Appearance
 import io.mynote.app.theme.LocalMyNoteColors
 import io.mynote.app.theme.LocalMyNoteMetrics
@@ -60,20 +67,110 @@ fun SettingsScreen(
     onBack: () -> Unit,
     onOpenPaywall: () -> Unit,
     onEditTheme: (String?) -> Unit,
-    onOpenSignIn: () -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
     val metrics = LocalMyNoteMetrics.current
     val scope = rememberCoroutineScope()
 
-    val authStatus by container.auth.status.collectAsState()
     val entitlements by container.billing.entitlements.collectAsState()
+    val provider by container.syncCoordinator.provider.collectAsState()
     val current by container.themeState.current.collectAsState()
     val custom by container.themeState.custom.collectAsState()
     val appearance by container.themeState.appearance.collectAsState()
+    val sawRemote by container.billing.sawRemoteLicense.collectAsState()
 
-    val canEdit = "theme_pro" in entitlements
-    val canSync = "cloud_sync" in entitlements
+    val isPro = "pro" in entitlements
+    var pendingSwitch by remember { mutableStateOf<StorageProvider?>(null) }
+    var confirmErase by remember { mutableStateOf(false) }
+
+    // Google's consent screen comes back through here.
+    val consentLauncher = rememberLauncherForActivityResult(
+        ActivityResultContracts.StartIntentSenderForResult()
+    ) { result ->
+        container.driveAuth.onAuthorizationResult(activity, result.data)
+        scope.launch {
+            container.syncCoordinator.select(StorageProvider.GOOGLE_DRIVE, confirmSwitch = false)
+            container.billing.applyRemoteLicense(container.syncCoordinator.readLicense())
+            container.applyEntitlements()
+            container.loadSyncedThemes()
+        }
+    }
+
+    suspend fun connect(target: StorageProvider) {
+        val consent = container.syncCoordinator.select(target)
+        if (consent != null) {
+            consentLauncher.launch(IntentSenderRequest.Builder(consent).build())
+            return
+        }
+        container.billing.applyRemoteLicense(container.syncCoordinator.readLicense())
+        container.applyEntitlements()
+        container.loadSyncedThemes()
+    }
+
+    fun choose(target: StorageProvider) {
+        if (target == provider) return
+        // Uploading is the paid part; reading is free so a purchase made on the
+        // other platform can be found.
+        if (target != StorageProvider.NONE && !isPro) {
+            onOpenPaywall()
+            return
+        }
+        if (provider != StorageProvider.NONE) {
+            pendingSwitch = target       // switching wipes; confirm first
+        } else {
+            scope.launch { connect(target) }
+        }
+    }
+
+    pendingSwitch?.let { target ->
+        AlertDialog(
+            onDismissRequest = { pendingSwitch = null },
+            title = { Text("Move your notes?") },
+            // Records carry no account, so mixing two backups would put one
+            // person's notes into another's Drive. Saying this plainly beats
+            // silently deleting.
+            text = {
+                Text(
+                    "Notes on this device will be removed and replaced with whatever is in " +
+                        "${target.title}. Anything not already backed up will be lost."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    pendingSwitch = null
+                    scope.launch { connect(target) }
+                }) { Text("Switch") }
+            },
+            dismissButton = {
+                TextButton(onClick = { pendingSwitch = null }) { Text("Cancel") }
+            },
+        )
+    }
+
+    if (confirmErase) {
+        AlertDialog(
+            onDismissRequest = { confirmErase = false },
+            title = { Text("Erase every note on this phone?") },
+            text = {
+                Text(
+                    if (provider == StorageProvider.NONE) {
+                        "These notes are not backed up anywhere. This cannot be undone."
+                    } else {
+                        "Your backup in ${provider.title} is untouched."
+                    }
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    confirmErase = false
+                    scope.launch { container.eraseLocalData() }
+                }) { Text("Erase", color = Color.Red) }
+            },
+            dismissButton = {
+                TextButton(onClick = { confirmErase = false }) { Text("Cancel") }
+            },
+        )
+    }
 
     Scaffold(
         containerColor = colors.background,
@@ -94,19 +191,37 @@ fun SettingsScreen(
             contentPadding = PaddingValues(metrics.contentPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionHeader("Account") }
+            item { SectionHeader("Backup") }
+            items(StorageProvider.entries.filter {
+                it != StorageProvider.GOOGLE_DRIVE || container.driveAuth.isConfigured
+            }) { option ->
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(metrics.cornerRadius))
+                        .clickable { choose(option) }
+                        .padding(vertical = 10.dp),
+                    verticalAlignment = Alignment.Top,
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(option.title, color = colors.textPrimary)
+                        Text(option.detail, color = colors.textSecondary,
+                             fontSize = metrics.baseSize * 0.82f)
+                    }
+                    if (provider == option) {
+                        Icon(Icons.Default.Check, "Selected", tint = colors.accent)
+                    }
+                }
+            }
+            item { SyncStatusRow(container) }
             item {
-                when (val status = authStatus) {
-                    is AuthStatus.SignedIn -> Column {
-                        Text(status.email ?: "Signed in", color = colors.textPrimary)
-                        TextButton(onClick = { container.auth.signOut() }) { Text("Sign out") }
+                Caption("MyNote has no servers. Your notes go to storage you already own, and we never see them.")
+            }
+            if (provider != StorageProvider.NONE) {
+                item {
+                    TextButton(onClick = { scope.launch { container.syncCoordinator.syncNow() } }) {
+                        Text("Back up now")
                     }
-                    AuthStatus.SignedOut -> Column {
-                        TextButton(onClick = onOpenSignIn) { Text("Sign in") }
-                        Caption("Your notes are saved on this device. Sign in to sync them and to carry purchases to another device.")
-                    }
-                    AuthStatus.Unconfigured ->
-                        Caption("This build has no sign-in credentials, so MyNote is running local-only.")
                 }
             }
 
@@ -123,7 +238,6 @@ fun SettingsScreen(
                     }
                 }
             }
-
             items(ThemeSpec.presets + custom) { spec ->
                 ThemeRow(
                     spec = spec,
@@ -132,55 +246,52 @@ fun SettingsScreen(
                     onEdit = {
                         // The gate is here, not inside the editor, so the paywall
                         // appears before the user invests effort in a design.
-                        if (canEdit) onEditTheme(if (spec.isPreset) null else spec.id)
+                        if (isPro) onEditTheme(if (spec.isPreset) null else spec.id)
                         else onOpenPaywall()
                     },
                 )
             }
-
             item {
-                TextButton(onClick = { if (canEdit) onEditTheme(null) else onOpenPaywall() }) {
-                    if (!canEdit) {
+                TextButton(onClick = { if (isPro) onEditTheme(null) else onOpenPaywall() }) {
+                    if (!isPro) {
                         Icon(Icons.Default.Lock, null, tint = colors.textSecondary)
                         Spacer(Modifier.width(6.dp))
                     }
-                    Text(if (canEdit) "New theme" else "Unlock custom themes")
+                    Text(if (isPro) "New theme" else "Unlock custom themes")
                 }
             }
-            if (!canEdit) {
-                item {
-                    Caption("The three built-in themes are free. Custom themes — your own colours, fonts, spacing and corners — are a one-time purchase.")
-                }
+            if (!isPro) {
+                item { Caption("The three built-in themes are free. Building your own is part of Pro.") }
             }
 
             item { HorizontalDivider(color = colors.border) }
-            item { SectionHeader("Sync") }
-            item { SyncStatusRow(container) }
-            item {
-                if (canSync) {
-                    TextButton(onClick = { scope.launch { container.syncCoordinator.syncNow() } }) {
-                        Text("Sync now")
-                    }
-                } else {
-                    TextButton(onClick = onOpenPaywall) { Text("Turn on cloud sync") }
-                }
-            }
-
-            item { HorizontalDivider(color = colors.border) }
-            item { SectionHeader("Purchases") }
+            item { SectionHeader("MyNote Pro") }
             item {
                 Column {
-                    Text("Custom themes: ${if (canEdit) "Unlocked" else "Locked"}", color = colors.textPrimary)
-                    Text("Cloud sync: ${if (canSync) "Active" else "Not active"}", color = colors.textPrimary)
+                    Text("Status: ${if (isPro) "Unlocked" else "Not purchased"}",
+                         color = colors.textPrimary)
+                    if (!isPro) {
+                        TextButton(onClick = onOpenPaywall) { Text("See what's included") }
+                    }
                     TextButton(onClick = {
                         scope.launch { container.billing.refreshLocalEntitlements() }
-                    }) { Text("Restore purchases") }
+                    }) { Text("Restore purchase") }
+                    if (sawRemote) {
+                        Caption("Unlocked from a purchase found in your backup.")
+                    }
                 }
             }
 
             item { HorizontalDivider(color = colors.border) }
             item { SectionHeader("About") }
-            item { Caption("MyNote ${io.mynote.app.BuildConfig.VERSION_NAME} (${io.mynote.app.BuildConfig.VERSION_CODE})") }
+            item {
+                Caption("MyNote ${io.mynote.app.BuildConfig.VERSION_NAME} (${io.mynote.app.BuildConfig.VERSION_CODE})")
+            }
+            item {
+                TextButton(onClick = { confirmErase = true }) {
+                    Text("Erase notes on this device", color = Color.Red)
+                }
+            }
         }
     }
 }
@@ -231,8 +342,11 @@ private fun ThemeRow(
             Spacer(Modifier.width(8.dp))
         }
         IconButton(onClick = onEdit) {
-            Icon(Icons.Default.Edit, if (spec.isPreset) "Duplicate ${spec.name}" else "Edit ${spec.name}",
-                 tint = colors.textSecondary)
+            Icon(
+                Icons.Default.Edit,
+                if (spec.isPreset) "Duplicate ${spec.name}" else "Edit ${spec.name}",
+                tint = colors.textSecondary,
+            )
         }
     }
 }
@@ -240,7 +354,6 @@ private fun ThemeRow(
 /** Shows the theme's own colours, so the list is a preview rather than names. */
 @Composable
 fun ThemeSwatch(spec: ThemeSpec, size: Int = 24) {
-    val border = parseHex(spec.light.border) ?: LocalMyNoteColors.current.border
     Box(
         Modifier
             .size(size.dp)

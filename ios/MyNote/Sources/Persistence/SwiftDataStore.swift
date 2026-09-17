@@ -7,125 +7,57 @@ import MyNoteCore
 /// A `ModelActor` so it owns its own `ModelContext` on its own executor — a
 /// context must never be touched from two tasks, and sync runs off the main
 /// actor so typing is never blocked by a network round trip.
+///
+/// This database is the source of truth. The file in the user's cloud folder is
+/// a projection of it, so a failed upload delays a backup but can never lose an
+/// edit.
 @ModelActor
 actor SwiftDataStore: LocalStore {
 
-    // MARK: - Cursor
-
-    func cursor() throws -> Int {
-        try state().cursor
-    }
-
-    func setCursor(_ value: Int) throws {
-        let s = try state()
-        s.cursor = value
-        s.lastSyncedAt = .now
-        try modelContext.save()
-    }
-
-    private func state() throws -> SyncState {
-        var descriptor = FetchDescriptor<SyncState>()
-        descriptor.fetchLimit = 1
-        if let existing = try modelContext.fetch(descriptor).first { return existing }
-        let fresh = SyncState()
-        modelContext.insert(fresh)
-        return fresh
-    }
-
-    // MARK: - Outbox
-
-    func outbox(limit: Int) throws -> [Change] {
-        var descriptor = FetchDescriptor<OutboxEntry>(
-            sortBy: [SortDescriptor(\.queuedAt, order: .forward)]
-        )
-        descriptor.fetchLimit = limit
-        return try modelContext.fetch(descriptor).compactMap(Self.change(from:))
-    }
-
-    func enqueue(_ change: Change) throws {
-        try writeRecord(change)
-
-        let fields = String(
-            data: (try? JSONEncoder().encode(change.fields)) ?? Data("{}".utf8),
-            encoding: .utf8
-        ) ?? "{}"
-
-        let key = "\(change.entity.rawValue):\(change.id)"
-        var descriptor = FetchDescriptor<OutboxEntry>(predicate: #Predicate { $0.key == key })
-        descriptor.fetchLimit = 1
-
-        if let existing = try modelContext.fetch(descriptor).first {
-            // Collapse rapid keystrokes into one pending change rather than
-            // queueing an entry per character.
-            existing.hlc = change.hlc
-            existing.deleted = change.deleted
-            existing.fieldsJSON = fields
-        } else {
-            modelContext.insert(OutboxEntry(
-                entity: change.entity.rawValue,
-                recordId: change.id,
-                hlc: change.hlc,
-                deleted: change.deleted,
-                fieldsJSON: fields
-            ))
-        }
-        try modelContext.save()
-    }
-
-    func removeFromOutbox(_ sent: [Change]) throws {
-        guard !sent.isEmpty else { return }
-        // Keyed on (key, hlc): a row re-written by a keystroke that landed while
-        // the push was in flight carries a newer clock and must survive, or that
-        // edit is lost without ever having been sent.
-        var confirmed: [String: String] = [:]
-        for change in sent { confirmed["\(change.entity.rawValue):\(change.id)"] = change.hlc }
-
-        for entry in try modelContext.fetch(FetchDescriptor<OutboxEntry>())
-        where confirmed[entry.key] == entry.hlc {
-            modelContext.delete(entry)
-        }
-        try modelContext.save()
-    }
-
-    func newestHlc() throws -> String? {
-        // Every edit this device made is in a record, the outbox, or both.
-        var newest: String? = nil
-        func consider(_ candidate: String?) {
-            guard let candidate else { return }
-            if newest == nil || candidate > newest! { newest = candidate }
-        }
-        for row in try modelContext.fetch(FetchDescriptor<OutboxEntry>()) { consider(row.hlc) }
-        for row in try modelContext.fetch(FetchDescriptor<NoteEntity>()) { consider(row.hlc) }
-        for row in try modelContext.fetch(FetchDescriptor<BlockEntity>()) { consider(row.hlc) }
-        for row in try modelContext.fetch(FetchDescriptor<ThemeEntity>()) { consider(row.hlc) }
-        return newest
-    }
-
-    func clearAll() throws {
-        // Local rows carry no uid, so switching accounts on one device must wipe
-        // them: otherwise the previous account's queued edits get pushed into
-        // the new account, and the new account inherits a cursor that makes its
-        // own server rows unreachable.
-        try modelContext.delete(model: OutboxEntry.self)
-        try modelContext.delete(model: NoteEntity.self)
-        try modelContext.delete(model: BlockEntity.self)
-        try modelContext.delete(model: ThemeEntity.self)
-        try modelContext.delete(model: SyncState.self)
-        try modelContext.save()
-    }
-
-    /// Custom themes that arrived from another device.
-    ///
-    /// Themes sync like any other record, but the theme UI reads from
-    /// UserDefaults, so they have to be handed across explicitly at launch.
-    func syncedThemes() throws -> [ThemeSpec] {
-        try modelContext
-            .fetch(FetchDescriptor<ThemeEntity>())
-            .filter { !$0.deleted }
-            .compactMap { ThemeSpec.decode($0.spec)?.sanitized() }
-    }
-
     // MARK: - Records
+
+    func changesAuthored(by node: String) throws -> [Change] {
+        var changes: [Change] = []
+
+        let notes = try modelContext.fetch(
+            FetchDescriptor<NoteEntity>(predicate: #Predicate { $0.authorNode == node })
+        )
+        changes += notes.map {
+            Note(id: $0.id, title: $0.title, icon: $0.icon, parentId: $0.parentId,
+                 orderKey: $0.orderKey, hlc: $0.hlc, deleted: $0.deleted).asChange()
+        }
+
+        let blocks = try modelContext.fetch(
+            FetchDescriptor<BlockEntity>(predicate: #Predicate { $0.authorNode == node })
+        )
+        changes += blocks.compactMap { row in
+            guard let type = BlockType(rawValue: row.type) else { return nil }
+            return Block(id: row.id, noteId: row.noteId, parentId: row.parentId,
+                         orderKey: row.orderKey, type: type,
+                         content: BlockContent.decode(row.content),
+                         hlc: row.hlc, deleted: row.deleted).asChange()
+        }
+
+        let themes = try modelContext.fetch(
+            FetchDescriptor<ThemeEntity>(predicate: #Predicate { $0.authorNode == node })
+        )
+        changes += themes.map {
+            Change(entity: .theme, id: $0.id, hlc: $0.hlc, deleted: $0.deleted,
+                   fields: ["name": .string($0.name), "spec": .string($0.spec)])
+        }
+
+        return changes
+    }
+
+    func recordLocal(_ change: Change) throws {
+        try writeRecord(change)
+        try modelContext.save()
+    }
+
+    func applyRemote(_ change: Change) throws {
+        try writeRecord(change)
+        try modelContext.save()
+    }
 
     func currentHlc(_ entity: Entity, _ id: String) throws -> String? {
         switch entity {
@@ -136,12 +68,91 @@ actor SwiftDataStore: LocalStore {
         }
     }
 
-    func applyRemote(_ change: Change) throws {
-        try writeRecord(change)
+    // MARK: - Sync bookkeeping
+
+    func mergedVersions() throws -> [String: String] {
+        let rows = try modelContext.fetch(FetchDescriptor<RemoteVersion>())
+        return Dictionary(uniqueKeysWithValues: rows.map { ($0.fileName, $0.version) })
+    }
+
+    func setMergedVersion(_ file: String, version: String) throws {
+        var descriptor = FetchDescriptor<RemoteVersion>(predicate: #Predicate { $0.fileName == file })
+        descriptor.fetchLimit = 1
+        if let existing = try modelContext.fetch(descriptor).first {
+            existing.version = version
+        } else {
+            modelContext.insert(RemoteVersion(fileName: file, version: version))
+        }
         try modelContext.save()
     }
 
+    func lastUploadedHlc() throws -> String? {
+        try meta().lastUploadedHlc
+    }
+
+    func setLastUploadedHlc(_ hlc: String) throws {
+        let row = try meta()
+        row.lastUploadedHlc = hlc
+        row.lastSyncedAt = .now
+        try modelContext.save()
+    }
+
+    func newestHlc() throws -> String? {
+        var newest: String?
+        func consider(_ candidate: String?) {
+            guard let candidate else { return }
+            if newest == nil || candidate > newest! { newest = candidate }
+        }
+        for row in try modelContext.fetch(FetchDescriptor<NoteEntity>()) { consider(row.hlc) }
+        for row in try modelContext.fetch(FetchDescriptor<BlockEntity>()) { consider(row.hlc) }
+        for row in try modelContext.fetch(FetchDescriptor<ThemeEntity>()) { consider(row.hlc) }
+        return newest
+    }
+
+    func clearAll() throws {
+        // Records carry no account. Connecting a different folder without this
+        // would upload one person's notes into another's Drive.
+        try modelContext.delete(model: NoteEntity.self)
+        try modelContext.delete(model: BlockEntity.self)
+        try modelContext.delete(model: ThemeEntity.self)
+        try modelContext.delete(model: RemoteVersion.self)
+        try modelContext.delete(model: SyncMeta.self)
+        try modelContext.save()
+    }
+
+    // MARK: - App-facing helpers
+
+    func lastSyncedAt() throws -> Date? { try meta().lastSyncedAt }
+
+    func connectedProvider() throws -> String? { try meta().connectedProvider }
+
+    func setConnectedProvider(_ provider: String?) throws {
+        try meta().connectedProvider = provider
+        try modelContext.save()
+    }
+
+    /// Custom themes that arrived from another device. Themes sync like any
+    /// other record, but the theme picker reads its own store.
+    func syncedThemes() throws -> [ThemeSpec] {
+        try modelContext
+            .fetch(FetchDescriptor<ThemeEntity>())
+            .filter { !$0.deleted }
+            .compactMap { ThemeSpec.decode($0.spec)?.sanitized() }
+    }
+
+    func blockIds(inNote noteId: String) throws -> [String] {
+        try modelContext
+            .fetch(FetchDescriptor<BlockEntity>(
+                predicate: #Predicate { $0.noteId == noteId && !$0.deleted }
+            ))
+            .map(\.id)
+    }
+
+    // MARK: - Writing
+
     private func writeRecord(_ change: Change) throws {
+        let author = HybridLogicalClock.decode(change.hlc)?.node ?? ""
+
         switch change.entity {
         case .note:
             if let row = try fetchNote(change.id) {
@@ -152,6 +163,7 @@ actor SwiftDataStore: LocalStore {
                     row.orderKey = change.fields.string("order_key") ?? row.orderKey
                 }
                 row.hlc = change.hlc
+                row.authorNode = author
                 row.deleted = change.deleted
                 row.updatedAt = .now
             } else if let note = Note(change: change) {
@@ -160,7 +172,7 @@ actor SwiftDataStore: LocalStore {
                     orderKey: note.orderKey, hlc: note.hlc, deleted: note.deleted
                 ))
             } else if change.deleted {
-                // Tombstone for a note we never had: record it so a later pull
+                // Tombstone for a note we never had: record it so a later merge
                 // cannot resurrect the delete.
                 modelContext.insert(NoteEntity(
                     id: change.id, title: "", icon: nil, parentId: nil,
@@ -178,6 +190,7 @@ actor SwiftDataStore: LocalStore {
                     row.content = change.fields.string("content") ?? row.content
                 }
                 row.hlc = change.hlc
+                row.authorNode = author
                 row.deleted = change.deleted
                 row.updatedAt = .now
             } else if let block = Block(change: change) {
@@ -201,6 +214,7 @@ actor SwiftDataStore: LocalStore {
                     row.spec = change.fields.string("spec") ?? row.spec
                 }
                 row.hlc = change.hlc
+                row.authorNode = author
                 row.deleted = change.deleted
             } else {
                 modelContext.insert(ThemeEntity(
@@ -215,6 +229,15 @@ actor SwiftDataStore: LocalStore {
         case .attachment:
             break
         }
+    }
+
+    private func meta() throws -> SyncMeta {
+        var descriptor = FetchDescriptor<SyncMeta>()
+        descriptor.fetchLimit = 1
+        if let existing = try modelContext.fetch(descriptor).first { return existing }
+        let fresh = SyncMeta()
+        modelContext.insert(fresh)
+        return fresh
     }
 
     private func fetchNote(_ id: String) throws -> NoteEntity? {
@@ -233,15 +256,5 @@ actor SwiftDataStore: LocalStore {
         var d = FetchDescriptor<ThemeEntity>(predicate: #Predicate { $0.id == id })
         d.fetchLimit = 1
         return try modelContext.fetch(d).first
-    }
-
-    private static func change(from entry: OutboxEntry) -> Change? {
-        guard let entity = Entity(rawValue: entry.entity) else { return nil }
-        let fields = (try? JSONDecoder().decode(
-            [String: JSONValue].self,
-            from: Data(entry.fieldsJSON.utf8)
-        )) ?? [:]
-        return Change(entity: entity, id: entry.recordId, hlc: entry.hlc,
-                      deleted: entry.deleted, fields: fields)
     }
 }

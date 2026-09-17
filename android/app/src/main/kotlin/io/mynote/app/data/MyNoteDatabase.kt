@@ -6,7 +6,10 @@ import androidx.room.Room
 import androidx.room.RoomDatabase
 
 @Database(
-    entities = [NoteRow::class, BlockRow::class, ThemeRow::class, OutboxRow::class, SyncStateRow::class],
+    entities = [
+        NoteRow::class, BlockRow::class, ThemeRow::class,
+        RemoteVersionRow::class, SyncMetaRow::class,
+    ],
     version = 1,
     exportSchema = true,
 )
@@ -14,8 +17,8 @@ abstract class MyNoteDatabase : RoomDatabase() {
     abstract fun notes(): NoteDao
     abstract fun blocks(): BlockDao
     abstract fun themes(): ThemeDao
-    abstract fun outbox(): OutboxDao
-    abstract fun syncState(): SyncStateDao
+    abstract fun remoteVersions(): RemoteVersionDao
+    abstract fun syncMeta(): SyncMetaDao
 
     companion object {
         @Volatile

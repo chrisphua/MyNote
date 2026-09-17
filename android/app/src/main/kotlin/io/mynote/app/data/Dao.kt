@@ -21,6 +21,9 @@ interface NoteDao {
     @Query("SELECT hlc FROM notes WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT * FROM notes WHERE authorNode = :node")
+    suspend fun authoredBy(node: String): List<NoteRow>
+
     @Query("SELECT MAX(hlc) FROM notes")
     suspend fun maxHlc(): String?
 
@@ -42,6 +45,9 @@ interface BlockDao {
     @Query("SELECT hlc FROM blocks WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT * FROM blocks WHERE authorNode = :node")
+    suspend fun authoredBy(node: String): List<BlockRow>
+
     @Query("SELECT MAX(hlc) FROM blocks")
     suspend fun maxHlc(): String?
 
@@ -52,7 +58,7 @@ interface BlockDao {
 @Dao
 interface ThemeDao {
     @Query("SELECT * FROM themes WHERE deleted = 0")
-    fun observeAll(): Flow<List<ThemeRow>>
+    suspend fun allActive(): List<ThemeRow>
 
     @Query("SELECT * FROM themes WHERE id = :id LIMIT 1")
     suspend fun byId(id: String): ThemeRow?
@@ -60,51 +66,33 @@ interface ThemeDao {
     @Query("SELECT hlc FROM themes WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT * FROM themes WHERE authorNode = :node")
+    suspend fun authoredBy(node: String): List<ThemeRow>
+
     @Query("SELECT MAX(hlc) FROM themes")
     suspend fun maxHlc(): String?
-
-    @Query("SELECT * FROM themes WHERE deleted = 0")
-    suspend fun allActive(): List<ThemeRow>
 
     @Upsert
     suspend fun upsert(row: ThemeRow)
 }
 
 @Dao
-interface OutboxDao {
-    @Query("SELECT * FROM outbox ORDER BY queuedAt LIMIT :limit")
-    suspend fun oldest(limit: Int): List<OutboxRow>
+interface RemoteVersionDao {
+    @Query("SELECT * FROM remote_versions")
+    suspend fun all(): List<RemoteVersionRow>
 
-    @Query("SELECT COUNT(*) FROM outbox")
-    fun observeCount(): Flow<Int>
-
-    /**
-     * Update in place rather than REPLACE, so a record edited repeatedly keeps
-     * its original `queuedAt` and does not keep jumping to the back of the FIFO.
-     */
-    @Query("UPDATE outbox SET hlc = :hlc, deleted = :deleted, fieldsJson = :fields WHERE `key` = :key")
-    suspend fun updateExisting(key: String, hlc: String, deleted: Boolean, fields: String): Int
-
-    @Insert(onConflict = OnConflictStrategy.IGNORE)
-    suspend fun insertIfAbsent(row: OutboxRow): Long
-
-    /**
-     * Delete only if the row still holds the version that was pushed. A
-     * keystroke landing during the round trip rewrites the row with a newer
-     * clock, and deleting that would lose the edit unsent.
-     */
-    @Query("DELETE FROM outbox WHERE `key` = :key AND hlc = :hlc")
-    suspend fun deleteConfirmed(key: String, hlc: String)
-
-    @Query("SELECT MAX(hlc) FROM outbox")
-    suspend fun maxHlc(): String?
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun put(row: RemoteVersionRow)
 }
 
 @Dao
-interface SyncStateDao {
-    @Query("SELECT * FROM sync_state WHERE id = 1")
-    suspend fun get(): SyncStateRow?
+interface SyncMetaDao {
+    @Query("SELECT * FROM sync_meta WHERE id = 1")
+    suspend fun get(): SyncMetaRow?
+
+    @Query("SELECT * FROM sync_meta WHERE id = 1")
+    fun observe(): Flow<SyncMetaRow?>
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun put(row: SyncStateRow)
+    suspend fun put(row: SyncMetaRow)
 }

@@ -51,26 +51,8 @@ fun MyNoteRoot(
 
     val entitlements by container.billing.entitlements.collectAsState()
 
-    // Keep the theme gate in step with what the user owns.
     LaunchedEffect(entitlements) {
-        container.themeState.canEdit = "theme_pro" in entitlements
-    }
-
-    val authStatus by container.auth.status.collectAsState()
-    val appContext = LocalContext.current.applicationContext
-
-    LaunchedEffect(Unit) {
-        container.billing.refreshLocalEntitlements()
-        container.loadSyncedThemes()
-    }
-
-    // Signing in or switching accounts: re-scope local data, then adopt whatever
-    // that account owns — including purchases made on iOS.
-    LaunchedEffect(authStatus) {
-        container.reconcileAccount(appContext)
-        container.refreshEntitlements()
-        container.loadSyncedThemes()
-        container.syncCoordinator.syncNow()
+        container.applyEntitlements()
     }
 
     val twoPane = windowSizeClass.widthSizeClass != WindowWidthSizeClass.Compact
@@ -129,19 +111,12 @@ fun MyNoteRoot(
                 onBack = { screen = Screen.Notes },
                 onOpenPaywall = { screen = Screen.Paywall },
                 onEditTheme = { screen = Screen.ThemeEditor(it) },
-                onOpenSignIn = { screen = Screen.SignIn },
             )
 
             Screen.Paywall -> PaywallScreen(
                 container = container,
                 activity = activity,
                 onClose = { screen = Screen.Settings },
-            )
-
-            Screen.SignIn -> SignInScreen(
-                container = container,
-                activity = activity,
-                onDone = { screen = Screen.Settings },
             )
 
             is Screen.ThemeEditor -> ThemeEditorScreen(
@@ -161,7 +136,6 @@ sealed interface Screen {
     data object Notes : Screen
     data object Settings : Screen
     data object Paywall : Screen
-    data object SignIn : Screen
     data class ThemeEditor(val themeId: String?) : Screen
 }
 

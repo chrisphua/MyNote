@@ -15,7 +15,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.acknowledgePurchase
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
-import io.mynote.core.Entitlement
+import io.mynote.core.License
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -27,46 +27,31 @@ import kotlinx.coroutines.launch
 /**
  * Google Play Billing.
  *
- * Play is the source of truth for *making* a purchase; our Worker is the source
- * of truth for *owning* one. That split is what lets an Android purchase unlock
- * the feature on iOS: we hand Play's purchase token to the server, which records
- * the entitlement against the Firebase uid rather than the device.
+ * One product. With no server to run, MyNote has no recurring cost, so charging
+ * a recurring price would be asking for money to cover an expense that does not
+ * exist. A single lifetime unlock is the honest shape.
  */
 class BillingManager(
     context: Context,
-    private val verifyWithServer: suspend (productId: String, token: String) -> List<Entitlement>,
+    /** Called after a purchase so the licence can be written to the user's folder. */
+    private val onPurchase: suspend (License) -> Unit,
 ) {
-    object Products {
-        const val THEMES_LIFETIME = "io.mynote.themes.lifetime"
-        const val SYNC_MONTHLY = "io.mynote.sync.monthly"
-        const val SYNC_YEARLY = "io.mynote.sync.yearly"
-
-        val oneTime = listOf(THEMES_LIFETIME)
-        val subscriptions = listOf(SYNC_MONTHLY, SYNC_YEARLY)
-
-        fun entitlementFor(productId: String): String? = when (productId) {
-            THEMES_LIFETIME -> "theme_pro"
-            SYNC_MONTHLY, SYNC_YEARLY -> "cloud_sync"
-            else -> null
-        }
-    }
-
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     private val _entitlements = MutableStateFlow<Set<String>>(emptySet())
     val entitlements: StateFlow<Set<String>> = _entitlements.asStateFlow()
 
-    private val _products = MutableStateFlow<Map<String, ProductDetails>>(emptyMap())
-    val products: StateFlow<Map<String, ProductDetails>> = _products.asStateFlow()
+    private val _product = MutableStateFlow<ProductDetails?>(null)
+    val product: StateFlow<ProductDetails?> = _product.asStateFlow()
 
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error.asStateFlow()
 
-    private val _serverConfirmed = MutableStateFlow(false)
-    val serverConfirmed: StateFlow<Boolean> = _serverConfirmed.asStateFlow()
+    /** True once a licence from the cloud folder has been merged in. */
+    private val _sawRemoteLicense = MutableStateFlow(false)
+    val sawRemoteLicense: StateFlow<Boolean> = _sawRemoteLicense.asStateFlow()
 
-    val canCustomizeThemes: Boolean get() = "theme_pro" in _entitlements.value
-    val canSync: Boolean get() = "cloud_sync" in _entitlements.value
+    val isPro: Boolean get() = PRO_ENTITLEMENT in _entitlements.value
 
     private val client: BillingClient = BillingClient.newBuilder(context)
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
@@ -74,21 +59,20 @@ class BillingManager(
             // Fires for purchases completed here and for ones approved later,
             // such as a parent approving a child's request.
             if (result.responseCode == BillingClient.BillingResponseCode.OK && purchases != null) {
-                scope.launch { purchases.forEach { handle(it) } }
+                scope.launch { purchases.forEach { adopt(it) } }
             } else if (result.responseCode != BillingClient.BillingResponseCode.USER_CANCELED) {
                 _error.value = describe(result)
             }
         }
         .build()
 
-    fun connect(onReady: () -> Unit = {}) {
+    fun connect() {
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
                     scope.launch {
-                        loadProducts()
+                        loadProduct()
                         refreshLocalEntitlements()
-                        onReady()
                     }
                 } else {
                     _error.value = describe(result)
@@ -101,82 +85,86 @@ class BillingManager(
         })
     }
 
-    suspend fun loadProducts() {
-        val oneTime = queryDetails(Products.oneTime, BillingClient.ProductType.INAPP)
-        val subs = queryDetails(Products.subscriptions, BillingClient.ProductType.SUBS)
-        _products.value = (oneTime + subs).associateBy { it.productId }
-    }
-
-    private suspend fun queryDetails(ids: List<String>, type: String): List<ProductDetails> {
+    suspend fun loadProduct() {
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(
-                ids.map {
+                listOf(
                     QueryProductDetailsParams.Product.newBuilder()
-                        .setProductId(it).setProductType(type).build()
-                }
+                        .setProductId(PRO_PRODUCT_ID)
+                        .setProductType(BillingClient.ProductType.INAPP)
+                        .build()
+                )
             )
             .build()
-        return runCatching { client.queryProductDetails(params).productDetailsList.orEmpty() }
-            .getOrElse { emptyList() }
+        _product.value = runCatching {
+            client.queryProductDetails(params).productDetailsList?.firstOrNull()
+        }.getOrNull()
     }
 
-    fun launchPurchase(activity: Activity, details: ProductDetails) {
-        val paramsBuilder = BillingFlowParams.ProductDetailsParams.newBuilder().setProductDetails(details)
-
-        // A subscription must name which base plan / offer is being bought.
-        details.subscriptionOfferDetails?.firstOrNull()?.let {
-            paramsBuilder.setOfferToken(it.offerToken)
-        }
-
+    fun launchPurchase(activity: Activity) {
+        val details = _product.value ?: return
         val flow = BillingFlowParams.newBuilder()
-            .setProductDetailsParamsList(listOf(paramsBuilder.build()))
+            .setProductDetailsParamsList(
+                listOf(
+                    BillingFlowParams.ProductDetailsParams.newBuilder()
+                        .setProductDetails(details)
+                        .build()
+                )
+            )
             .build()
         client.launchBillingFlow(activity, flow)
     }
 
     /** Re-read what this Google account owns. Required for a Restore control. */
     suspend fun refreshLocalEntitlements() {
-        val found = mutableSetOf<String>()
-        for (type in listOf(BillingClient.ProductType.INAPP, BillingClient.ProductType.SUBS)) {
-            val params = QueryPurchasesParams.newBuilder().setProductType(type).build()
-            val purchases = runCatching { client.queryPurchasesAsync(params).purchasesList }
-                .getOrElse { emptyList() }
-            for (purchase in purchases) {
-                if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) continue
-                purchase.products.mapNotNull(Products::entitlementFor).forEach(found::add)
-                handle(purchase)
+        val params = QueryPurchasesParams.newBuilder()
+            .setProductType(BillingClient.ProductType.INAPP)
+            .build()
+        val purchases = runCatching { client.queryPurchasesAsync(params).purchasesList }
+            .getOrElse { emptyList() }
+        purchases.forEach { adopt(it, announce = false) }
+    }
+
+    /**
+     * Adopt a licence found in the user's cloud folder.
+     *
+     * Union with what Play says, never a replacement: a purchase made on iOS
+     * exists only in the file, and one made here may not be uploaded yet.
+     * Neither may revoke the other.
+     */
+    fun applyRemoteLicense(license: License?) {
+        if (license == null) return
+        _entitlements.value = License.combine(_entitlements.value, license)
+        _sawRemoteLicense.value = true
+    }
+
+    private suspend fun adopt(purchase: Purchase, announce: Boolean = true) {
+        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
+        if (PRO_PRODUCT_ID !in purchase.products) return
+
+        _entitlements.value = _entitlements.value + PRO_ENTITLEMENT
+
+        // Play auto-refunds anything left unacknowledged for three days.
+        if (!purchase.isAcknowledged) {
+            runCatching {
+                client.acknowledgePurchase(
+                    AcknowledgePurchaseParams.newBuilder()
+                        .setPurchaseToken(purchase.purchaseToken)
+                        .build()
+                )
             }
         }
-        // Union rather than replace: an entitlement bought on iOS lives only on
-        // the server, and Play has never heard of it.
-        _entitlements.value = _entitlements.value + found
-    }
 
-    /** Adopt the server's answer, which is authoritative across platforms. */
-    fun applyServerEntitlements(list: List<Entitlement>) {
-        _entitlements.value = list.filter { it.active }.map { it.entitlement }.toSet()
-        _serverConfirmed.value = true
-    }
-
-    private suspend fun handle(purchase: Purchase) {
-        if (purchase.purchaseState != Purchase.PurchaseState.PURCHASED) return
-
-        val productId = purchase.products.firstOrNull() ?: return
-        Products.entitlementFor(productId)?.let {
-            // Unlock immediately; the server call below is confirmation, not a gate.
-            _entitlements.value = _entitlements.value + it
-        }
-
-        runCatching { verifyWithServer(productId, purchase.purchaseToken) }
-            .onSuccess(::applyServerEntitlements)
-
-        // Play auto-refunds anything left unacknowledged for three days. The
-        // server acknowledges too; doing it here as well costs nothing and
-        // covers the case where our backend is unreachable.
-        if (!purchase.isAcknowledged) {
-            val params = AcknowledgePurchaseParams.newBuilder()
-                .setPurchaseToken(purchase.purchaseToken).build()
-            runCatching { client.acknowledgePurchase(params) }
+        if (announce) {
+            onPurchase(
+                License(
+                    entitlements = listOf(PRO_ENTITLEMENT),
+                    productId = PRO_PRODUCT_ID,
+                    platform = "google",
+                    purchasedAt = purchase.purchaseTime,
+                    receipt = purchase.purchaseToken,
+                )
+            )
         }
     }
 
@@ -184,10 +172,15 @@ class BillingManager(
         BillingClient.BillingResponseCode.BILLING_UNAVAILABLE ->
             "Google Play billing isn't available on this device."
         BillingClient.BillingResponseCode.ITEM_ALREADY_OWNED ->
-            "You already own this. Try Restore purchases."
+            "You already own this. Try Restore purchase."
         BillingClient.BillingResponseCode.NETWORK_ERROR,
         BillingClient.BillingResponseCode.SERVICE_UNAVAILABLE ->
             "No connection to Google Play. Try again shortly."
         else -> result.debugMessage.ifBlank { "Purchase failed." }
+    }
+
+    companion object {
+        const val PRO_PRODUCT_ID = "io.mynote.pro"
+        const val PRO_ENTITLEMENT = "pro"
     }
 }

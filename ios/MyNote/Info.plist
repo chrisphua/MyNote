@@ -31,6 +31,20 @@
 	<string>$(CURRENT_PROJECT_VERSION)</string>
 	<key>ITSAppUsesNonExemptEncryption</key>
 	<false/>
+	<key>MyNoteGoogleClientID</key>
+	<string></string>
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.io.mynote.app</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>MyNote</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

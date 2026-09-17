@@ -50,16 +50,17 @@ jobs:
         run: xcodegen generate
 
       # Absent on PRs from forks; the app detects this and runs local-only.
-      # Absent on PRs from forks; the app detects this and runs local-only.
-      - name: Write Firebase config
+      # Absent on PRs from forks. Without it Google Drive is simply not
+      # offered; iCloud Drive and local-only still work, so the build is valid.
+      - name: Inject Google Drive client id
         working-directory: ios
         env:
-          FIREBASE_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
+          GOOGLE_CLIENT_ID: ${{ secrets.IOS_GOOGLE_OAUTH_CLIENT_ID }}
         run: |
-          if [ -n "$FIREBASE_PLIST" ]; then
-            echo "$FIREBASE_PLIST" | base64 --decode > MyNote/Resources/GoogleService-Info.plist
+          if [ -n "$GOOGLE_CLIENT_ID" ]; then
+            /usr/libexec/PlistBuddy -c "Set :MyNoteGoogleClientID $GOOGLE_CLIENT_ID" MyNote/Info.plist
           else
-            echo "No Firebase config available; building in local-only mode."
+            echo "No Google client id; Drive backup will be hidden in this build."
           fi
 
       - name: Build
@@ -85,11 +86,11 @@ jobs:
         working-directory: ios
         run: xcodegen generate
 
-      - name: Write Firebase config
+      - name: Inject Google Drive client id
         working-directory: ios
         env:
-          FIREBASE_PLIST: ${{ secrets.IOS_GOOGLE_SERVICE_INFO_PLIST }}
-        run: echo "$FIREBASE_PLIST" | base64 --decode > MyNote/Resources/GoogleService-Info.plist
+          GOOGLE_CLIENT_ID: ${{ secrets.IOS_GOOGLE_OAUTH_CLIENT_ID }}
+        run: /usr/libexec/PlistBuddy -c "Set :MyNoteGoogleClientID $GOOGLE_CLIENT_ID" MyNote/Info.plist
 
       - uses: ruby/setup-ruby@v1
         with:

@@ -36,17 +36,7 @@ struct RootView: View {
         }
         .task { await app.start() }
         .onChange(of: app.purchases.entitlements) { _, _ in
-            app.themeManager.canEdit = app.purchases.canCustomizeThemes
-        }
-        .onChange(of: app.auth.status) { _, _ in
-            // Signing in or switching accounts: re-scope local data, then adopt
-            // whatever that account owns — including purchases made on Android.
-            Task {
-                await app.reconcileAccount()
-                await app.refreshEntitlements()
-                app.loadSyncedThemes()
-                await app.syncCoordinator.syncNow()
-            }
+            app.applyEntitlements()
         }
     }
 }

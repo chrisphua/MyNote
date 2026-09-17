@@ -6,16 +6,16 @@ options:
   createIntermediateGroups: true
   groupSortPosition: top
 
+# No third-party dependencies. Removing the backend removed Firebase with it,
+# and Google Drive is reached through its REST API directly — so there is no SDK
+# to keep current and nothing in the binary we did not write.
 packages:
   MyNoteCore:
     path: MyNoteCore
-  Firebase:
-    url: https://github.com/firebase/firebase-ios-sdk
-    from: "11.6.0"
 
 settings:
   base:
-    MARKETING_VERSION: "0.1.0"
+    MARKETING_VERSION: "0.2.0"
     CURRENT_PROJECT_VERSION: "1"
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
@@ -34,10 +34,16 @@ targets:
     dependencies:
       - package: MyNoteCore
         product: MyNoteCore
-      - package: Firebase
-        product: FirebaseAuth
-      - package: Firebase
-        product: FirebaseCore
+    entitlements:
+      path: MyNote/MyNote.entitlements
+      properties:
+        # Backup lives in the user's own iCloud Drive, visible in the Files app.
+        com.apple.developer.icloud-container-identifiers:
+          - iCloud.io.mynote.app
+        com.apple.developer.icloud-services:
+          - CloudDocuments
+        com.apple.developer.ubiquity-container-identifiers:
+          - iCloud.io.mynote.app
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: io.mynote.app
@@ -64,7 +70,16 @@ targets:
           - UIInterfaceOrientationLandscapeLeft
           - UIInterfaceOrientationLandscapeRight
         ITSAppUsesNonExemptEncryption: false
-        # Sign in with Apple and Google both return through this scheme.
+        # Left empty in the repo: without it Google Drive is simply not offered,
+        # and iCloud plus local-only still work. See docs/DEPLOYMENT.md.
+        MyNoteGoogleClientID: ""
+        NSUbiquitousContainers:
+          iCloud.io.mynote.app:
+            NSUbiquitousContainerIsDocumentScopePublic: true
+            NSUbiquitousContainerName: MyNote
+            NSUbiquitousContainerSupportedFolderLevels: Any
+        # Google's OAuth callback for installed apps is the reversed client id.
+        # Filled in alongside MyNoteGoogleClientID.
         CFBundleURLTypes:
           - CFBundleURLSchemes:
               - io.mynote.app

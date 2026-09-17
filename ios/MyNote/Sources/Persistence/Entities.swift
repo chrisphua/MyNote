@@ -4,9 +4,11 @@ import MyNoteCore
 
 /// SwiftData mirrors of the core models.
 ///
-/// These are storage types, not domain types: `MyNoteCore` owns the domain so
-/// the sync engine stays testable without SwiftData. Each entity keeps the `hlc`
-/// it was last written with, which is what makes local merge decisions possible.
+/// Storage types, not domain types: `MyNoteCore` owns the domain so the sync
+/// engine stays testable without SwiftData. Each row keeps the `hlc` it was last
+/// written with — that is what makes local merge decisions possible — and the
+/// `authorNode` from inside that clock, so "everything this device owns" is an
+/// indexed query rather than a scan.
 
 @Model
 final class NoteEntity {
@@ -16,6 +18,8 @@ final class NoteEntity {
     var parentId: String?
     var orderKey: String
     var hlc: String
+    /// Device that wrote the current version; decoded from `hlc` on write.
+    var authorNode: String
     var deleted: Bool
     var updatedAt: Date
 
@@ -27,6 +31,7 @@ final class NoteEntity {
         self.parentId = parentId
         self.orderKey = orderKey
         self.hlc = hlc
+        self.authorNode = HybridLogicalClock.decode(hlc)?.node ?? ""
         self.deleted = deleted
         self.updatedAt = .now
     }
@@ -39,9 +44,10 @@ final class BlockEntity {
     var parentId: String?
     var orderKey: String
     var type: String
-    /// JSON, matching `blocks.content` on the server.
+    /// JSON, matching the `content` field on the wire.
     var content: String
     var hlc: String
+    var authorNode: String
     var deleted: Bool
     var updatedAt: Date
 
@@ -54,6 +60,7 @@ final class BlockEntity {
         self.type = type
         self.content = content
         self.hlc = hlc
+        self.authorNode = HybridLogicalClock.decode(hlc)?.node ?? ""
         self.deleted = deleted
         self.updatedAt = .now
     }
@@ -65,6 +72,7 @@ final class ThemeEntity {
     var name: String
     var spec: String
     var hlc: String
+    var authorNode: String
     var deleted: Bool
 
     init(id: String, name: String, spec: String, hlc: String, deleted: Bool) {
@@ -72,42 +80,35 @@ final class ThemeEntity {
         self.name = name
         self.spec = spec
         self.hlc = hlc
+        self.authorNode = HybridLogicalClock.decode(hlc)?.node ?? ""
         self.deleted = deleted
     }
 }
 
-/// A local edit waiting to reach the server.
+/// Which version of each other device's file we have already merged.
 ///
-/// Persisting the outbox is what makes the app genuinely offline-first: edits
-/// made in airplane mode survive a force-quit and a reboot.
+/// Lets a sync skip a file that has not changed, instead of re-downloading every
+/// device's whole backup on every pass.
 @Model
-final class OutboxEntry {
-    @Attribute(.unique) var key: String      // "<entity>:<id>"
-    var entity: String
-    var recordId: String
-    var hlc: String
-    var deleted: Bool
-    var fieldsJSON: String
-    var queuedAt: Date
+final class RemoteVersion {
+    @Attribute(.unique) var fileName: String
+    var version: String
 
-    init(entity: String, recordId: String, hlc: String, deleted: Bool, fieldsJSON: String) {
-        self.key = "\(entity):\(recordId)"
-        self.entity = entity
-        self.recordId = recordId
-        self.hlc = hlc
-        self.deleted = deleted
-        self.fieldsJSON = fieldsJSON
-        self.queuedAt = .now
+    init(fileName: String, version: String) {
+        self.fileName = fileName
+        self.version = version
     }
 }
 
+/// Sync bookkeeping. One row.
 @Model
-final class SyncState {
-    @Attribute(.unique) var singleton: String = "state"
-    var cursor: Int
+final class SyncMeta {
+    @Attribute(.unique) var singleton: String = "meta"
+    /// Newest clock we had when our own file was last uploaded successfully.
+    var lastUploadedHlc: String?
     var lastSyncedAt: Date?
+    /// Which storage provider the notes currently belong to.
+    var connectedProvider: String?
 
-    init(cursor: Int = 0) {
-        self.cursor = cursor
-    }
+    init() {}
 }

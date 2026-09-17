@@ -43,6 +43,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.mynote.app.AppContainer
 import io.mynote.app.data.NoteRow
+import io.mynote.app.sync.SyncStatus
 import io.mynote.app.theme.LocalMyNoteColors
 import io.mynote.app.theme.LocalMyNoteMetrics
 import kotlinx.coroutines.flow.map
@@ -203,18 +204,20 @@ fun SyncStatusRow(container: AppContainer) {
     val metrics = LocalMyNoteMetrics.current
 
     val status by container.syncCoordinator.status.collectAsState()
-    val pending by container.database.outbox().observeCount().collectAsState(initial = 0)
+    val pending by container.syncCoordinator.hasPendingChanges.collectAsState()
     val lastSynced by container.syncCoordinator.lastSyncedAt.collectAsState()
+    val provider by container.syncCoordinator.provider.collectAsState()
 
-    val message = when (val s = status) {
-        io.mynote.app.sync.SyncStatus.Syncing -> "Syncing…"
-        io.mynote.app.sync.SyncStatus.Offline ->
-            if (pending > 0) "Offline — $pending change${plural(pending)} waiting" else "Offline"
-        is io.mynote.app.sync.SyncStatus.Paused -> s.reason
-        is io.mynote.app.sync.SyncStatus.Error -> s.message
-        io.mynote.app.sync.SyncStatus.Idle -> when {
-            pending > 0 -> "$pending change${plural(pending)} waiting"
-            lastSynced != null -> "Synced ${relativeTime(lastSynced!!)}"
+    val message = when (val current = status) {
+        SyncStatus.LocalOnly -> "Saved on this device"
+        SyncStatus.Syncing -> "Backing up\u2026"
+        SyncStatus.Offline -> if (pending) "Offline \u2014 changes waiting" else "Offline"
+        SyncStatus.NeedsSignIn -> "Reconnect ${provider.title}"
+        SyncStatus.StorageFull -> "${provider.title} is full"
+        is SyncStatus.Error -> current.message
+        SyncStatus.Idle -> when {
+            pending -> "Changes waiting"
+            lastSynced != null -> "Backed up ${relativeTime(lastSynced!!)}"
             else -> "Saved on this device"
         }
     }
@@ -226,8 +229,6 @@ fun SyncStatusRow(container: AppContainer) {
         modifier = Modifier.padding(horizontal = metrics.contentPadding + 12.dp, vertical = 2.dp),
     )
 }
-
-private fun plural(n: Int) = if (n == 1) "" else "s"
 
 fun relativeTime(epochMillis: Long): String {
     val delta = System.currentTimeMillis() - epochMillis

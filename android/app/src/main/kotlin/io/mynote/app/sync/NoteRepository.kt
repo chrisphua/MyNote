@@ -93,7 +93,8 @@ class NoteRepository(
     }
 
     private suspend fun write(change: Change) {
-        coordinator.engine.enqueue(change)
+        coordinator.engine.record(change)
+        coordinator.refreshPending()
         coordinator.scheduleSync()
     }
 }

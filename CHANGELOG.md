@@ -4,7 +4,58 @@ Notable changes to MyNote. Format follows [Keep a Changelog](https://keepachange
 versions follow [SemVer](https://semver.org/). iOS and Android ship from the same
 version number so a bug report maps to one commit.
 
-## [Unreleased]
+## [0.2.0] — Serverless
+
+**MyNote no longer has a backend.** Notes are backed up into storage the user
+already owns, and nothing of theirs touches hardware we control.
+
+### Changed
+
+- **Removed the entire backend.** The Cloudflare Worker, D1 database, R2 bucket,
+  Firebase Auth, all server secrets and the deploy pipeline are gone. So are
+  accounts: MyNote has no concept of a user.
+- **Backup goes to the user's own storage** — iCloud Drive (Apple devices) or
+  Google Drive (iPhone, iPad *and* Android). The storage picker states plainly
+  that Apple publishes no iCloud Drive API for Android, so anyone using both
+  platforms needs Drive.
+- **New backup format.** Each device writes exactly one JSON file and never
+  another's, which removes write conflicts entirely — there is no file two
+  devices can both write, so nothing to lock. Merging happens on read, by the
+  same hybrid logical clock as before. The format is documented and readable:
+  if MyNote disappears, the notes are still plain JSON in the user's Drive.
+- **The outbox is gone.** The local database is the source of truth and the
+  remote file is a projection of it, so a failed upload cannot lose an edit —
+  it only means the folder is briefly behind. This is strictly stronger than
+  the queue it replaces, and it structurally eliminates the in-flight-edit bug
+  class fixed in 0.1.0.
+- **Pricing is now one purchase: MyNote Pro, $14.99, paid once**, unlocking
+  custom themes and cloud backup. The subscription is withdrawn: with no
+  servers there is no recurring cost, and charging monthly for an expense that
+  does not exist is not defensible. Running costs fell from ~$174/year to $114.
+- **Purchases cross platforms through a `license.json` file** in the user's own
+  folder rather than a server. Free users may connect a folder and read from it
+  — that is what lets a purchase made on the other platform be discovered — but
+  uploading requires Pro.
+- **iOS now has zero third-party dependencies.** Google Drive is reached through
+  its REST API with a hand-rolled PKCE flow; Firebase is gone. Android is down
+  to four.
+- Google access uses the `drive.file` scope only — per-file access to files the
+  app created, which also avoids Google's restricted-scope security assessment.
+
+### Removed
+
+- Server-side sync, entitlement storage, quota enforcement, receipt
+  verification, attachment hosting, store webhooks, and every secret that went
+  with them.
+- Sign-in. There is no account to create.
+
+### Known gaps
+
+Attachment bytes are not yet uploaded, device files are rewritten whole rather
+than chunked, and backups from a device the user no longer owns are never
+pruned. See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+
+## [0.1.0] — Server-backed (withdrawn)
 
 ### Added
 
@@ -29,6 +80,8 @@ version number so a bug report maps to one commit.
   smoke test), iOS (core tests → build → TestFlight on tag) and Android (tests →
   debug build → Play internal on tag), plus an automated code review on every PR.
 - **117 tests** — 35 backend (against real D1), 36 iOS core, 46 Android core.
+
+*This release was never shipped; 0.2.0 replaced its architecture before launch.*
 
 ### Fixed
 

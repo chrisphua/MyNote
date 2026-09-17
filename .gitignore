@@ -8,7 +8,6 @@
 .env
 .env.*
 !.env.example
-backend/.dev.vars
 fastlane/report.xml
 fastlane/*.log
 
@@ -29,9 +28,6 @@ android/local.properties
 *.apk
 *.aab
 
-backend/node_modules/
-backend/.wrangler/
-backend/dist/
 node_modules/
 
 # ---- os / editor ------------------------------------------------------------
@@ -39,3 +35,7 @@ node_modules/
 *.swp
 .idea/
 *.iml
+
+# Kotlin compiler daemon session files
+android/.kotlin/
+**/.kotlin/

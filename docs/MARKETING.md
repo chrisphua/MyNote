@@ -35,10 +35,14 @@ brag generate --config marketing/brag/brag.config.json --target tiktok
 
 ## Positioning
 
-**The line:** *Notes that work offline, in a theme you actually chose.*
+**The line:** *Your notes, in your storage, in a theme you chose.*
 
-Two claims, both true and both checkable, because the market is crowded with note
+Three claims, all true and all checkable, because the market is crowded with note
 apps making vague ones.
+
+The strongest differentiator is now the one nobody else leads with: **there is no
+server.** Notes go to the user's own Drive. No account, no subscription, nothing
+to shut down.
 
 | Against | Our angle |
 |---|---|
@@ -46,11 +50,13 @@ apps making vague ones.
 | Apple Notes | Real theming, and it works on Android too |
 | Obsidian | The same local-first promise without the setup or the plugin rabbit hole |
 | Bear | Cross-platform, and themes you build rather than pick from a list |
+| Everything with a subscription | $14.99 once. No account. Your files, in your Drive. |
 
-**Do not claim:** end-to-end encryption (not implemented — see
-[ARCHITECTURE.md](ARCHITECTURE.md)), real-time collaboration, or AI features.
-Shipping a claim the app does not honour is how you earn one-star reviews and a
-store rejection in the same week.
+**Do not claim:** end-to-end encryption (Google and Apple can read files in
+their own storage), real-time collaboration, AI features, or that iCloud syncs
+to Android — **it cannot**, and saying otherwise earns refunds. Shipping a claim
+the app does not honour is how you get one-star reviews and a store rejection in
+the same week.
 
 ## Asset checklist
 
@@ -69,7 +75,9 @@ store rejection in the same week.
 
 **Social**
 - TikTok / Reels: 9:16, 15–30s. The theme editor changing a page live is the
-  single most watchable thing this app does — lead with it.
+  single most watchable thing this app does — lead with it. The second-best is
+  opening the MyNote folder in the Drive app and showing the actual files: "your
+  notes, right there, no account."
 - Facebook / Instagram: 1:1 and 4:5 stills, the same before/after framing.
 
 ## Suggested cadence

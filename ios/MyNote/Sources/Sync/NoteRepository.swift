@@ -86,13 +86,13 @@ struct NoteRepository {
 
     private func write(_ change: Change) async {
         do {
-            try await store.enqueue(change)
+            try await store.recordLocal(change)
         } catch {
             // Local persistence failing is serious, but the in-memory model is
             // still correct for this session, so keep the app usable.
             assertionFailure("local write failed: \(error)")
         }
-        await coordinator.refreshPendingCount()
+        await coordinator.refreshPending()
         coordinator.scheduleSync()
     }
 }

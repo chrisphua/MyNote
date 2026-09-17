@@ -9,8 +9,8 @@ class MyNoteApplication : Application() {
     override fun onCreate() {
         super.onCreate()
         container = AppContainer(this)
-        // Billing connects eagerly so the paywall has prices ready the first
-        // time it is opened, rather than showing empty placeholders.
-        container.billing.connect()
+        // Eager so the paywall has a price ready the first time it is opened,
+        // and so a backup starts before the user reaches for it.
+        container.start()
     }
 }

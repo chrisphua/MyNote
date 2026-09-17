@@ -2,11 +2,11 @@
   "formatVersion": 1,
   "database": {
     "version": 1,
-    "identityHash": "c039e7ae2eaed393c19876c5d06a3742",
+    "identityHash": "e30cae1627be80caf01485ca3284df10",
     "entities": [
       {
         "tableName": "notes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `icon` TEXT, `parentId` TEXT, `orderKey` TEXT NOT NULL, `hlc` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `title` TEXT NOT NULL, `icon` TEXT, `parentId` TEXT, `orderKey` TEXT NOT NULL, `hlc` TEXT NOT NULL, `authorNode` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -45,6 +45,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "authorNode",
+            "columnName": "authorNode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
             "fieldPath": "deleted",
             "columnName": "deleted",
             "affinity": "INTEGER",
@@ -73,13 +79,22 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_notes_parentId_orderKey` ON `${TABLE_NAME}` (`parentId`, `orderKey`)"
+          },
+          {
+            "name": "index_notes_authorNode",
+            "unique": false,
+            "columnNames": [
+              "authorNode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_notes_authorNode` ON `${TABLE_NAME}` (`authorNode`)"
           }
         ],
         "foreignKeys": []
       },
       {
         "tableName": "blocks",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `noteId` TEXT NOT NULL, `parentId` TEXT, `orderKey` TEXT NOT NULL, `type` TEXT NOT NULL, `content` TEXT NOT NULL, `hlc` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `noteId` TEXT NOT NULL, `parentId` TEXT, `orderKey` TEXT NOT NULL, `type` TEXT NOT NULL, `content` TEXT NOT NULL, `hlc` TEXT NOT NULL, `authorNode` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `updatedAt` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -124,6 +139,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "authorNode",
+            "columnName": "authorNode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
             "fieldPath": "deleted",
             "columnName": "deleted",
             "affinity": "INTEGER",
@@ -152,13 +173,22 @@
             ],
             "orders": [],
             "createSql": "CREATE INDEX IF NOT EXISTS `index_blocks_noteId_orderKey` ON `${TABLE_NAME}` (`noteId`, `orderKey`)"
+          },
+          {
+            "name": "index_blocks_authorNode",
+            "unique": false,
+            "columnNames": [
+              "authorNode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_blocks_authorNode` ON `${TABLE_NAME}` (`authorNode`)"
           }
         ],
         "foreignKeys": []
       },
       {
         "tableName": "themes",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `spec` TEXT NOT NULL, `hlc` TEXT NOT NULL, `deleted` INTEGER NOT NULL, PRIMARY KEY(`id`))",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` TEXT NOT NULL, `name` TEXT NOT NULL, `spec` TEXT NOT NULL, `hlc` TEXT NOT NULL, `authorNode` TEXT NOT NULL, `deleted` INTEGER NOT NULL, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -185,6 +215,12 @@
             "notNull": true
           },
           {
+            "fieldPath": "authorNode",
+            "columnName": "authorNode",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
             "fieldPath": "deleted",
             "columnName": "deleted",
             "affinity": "INTEGER",
@@ -197,68 +233,48 @@
             "id"
           ]
         },
-        "indices": [],
+        "indices": [
+          {
+            "name": "index_themes_authorNode",
+            "unique": false,
+            "columnNames": [
+              "authorNode"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_themes_authorNode` ON `${TABLE_NAME}` (`authorNode`)"
+          }
+        ],
         "foreignKeys": []
       },
       {
-        "tableName": "outbox",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`key` TEXT NOT NULL, `entity` TEXT NOT NULL, `recordId` TEXT NOT NULL, `hlc` TEXT NOT NULL, `deleted` INTEGER NOT NULL, `fieldsJson` TEXT NOT NULL, `queuedAt` INTEGER NOT NULL, PRIMARY KEY(`key`))",
+        "tableName": "remote_versions",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`fileName` TEXT NOT NULL, `version` TEXT NOT NULL, PRIMARY KEY(`fileName`))",
         "fields": [
           {
-            "fieldPath": "key",
-            "columnName": "key",
+            "fieldPath": "fileName",
+            "columnName": "fileName",
             "affinity": "TEXT",
             "notNull": true
           },
           {
-            "fieldPath": "entity",
-            "columnName": "entity",
+            "fieldPath": "version",
+            "columnName": "version",
             "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "recordId",
-            "columnName": "recordId",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "hlc",
-            "columnName": "hlc",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "deleted",
-            "columnName": "deleted",
-            "affinity": "INTEGER",
-            "notNull": true
-          },
-          {
-            "fieldPath": "fieldsJson",
-            "columnName": "fieldsJson",
-            "affinity": "TEXT",
-            "notNull": true
-          },
-          {
-            "fieldPath": "queuedAt",
-            "columnName": "queuedAt",
-            "affinity": "INTEGER",
             "notNull": true
           }
         ],
         "primaryKey": {
           "autoGenerate": false,
           "columnNames": [
-            "key"
+            "fileName"
           ]
         },
         "indices": [],
         "foreignKeys": []
       },
       {
-        "tableName": "sync_state",
-        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `cursor` INTEGER NOT NULL, `lastSyncedAt` INTEGER, PRIMARY KEY(`id`))",
+        "tableName": "sync_meta",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`id` INTEGER NOT NULL, `lastUploadedHlc` TEXT, `lastSyncedAt` INTEGER, `connectedProvider` TEXT, PRIMARY KEY(`id`))",
         "fields": [
           {
             "fieldPath": "id",
@@ -267,15 +283,21 @@
             "notNull": true
           },
           {
-            "fieldPath": "cursor",
-            "columnName": "cursor",
-            "affinity": "INTEGER",
-            "notNull": true
+            "fieldPath": "lastUploadedHlc",
+            "columnName": "lastUploadedHlc",
+            "affinity": "TEXT",
+            "notNull": false
           },
           {
             "fieldPath": "lastSyncedAt",
             "columnName": "lastSyncedAt",
             "affinity": "INTEGER",
+            "notNull": false
+          },
+          {
+            "fieldPath": "connectedProvider",
+            "columnName": "connectedProvider",
+            "affinity": "TEXT",
             "notNull": false
           }
         ],
@@ -292,7 +314,7 @@
     "views": [],
     "setupQueries": [
       "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
-      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c039e7ae2eaed393c19876c5d06a3742')"
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'e30cae1627be80caf01485ca3284df10')"
     ]
   }
 }

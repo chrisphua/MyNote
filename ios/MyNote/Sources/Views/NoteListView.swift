@@ -81,11 +81,7 @@ struct NoteListView: View {
     }
 
     private func blockIds(for noteId: String) async -> [String] {
-        let descriptor = FetchDescriptor<BlockEntity>(
-            predicate: #Predicate { $0.noteId == noteId && !$0.deleted }
-        )
-        let context = ModelContext(app.modelContainer)
-        return ((try? context.fetch(descriptor)) ?? []).map(\.id)
+        (try? await app.store.blockIds(inNote: noteId)) ?? []
     }
 }
 
@@ -119,27 +115,31 @@ struct SyncStatusView: View {
         let coordinator = app.syncCoordinator
         HStack(spacing: 6) {
             switch coordinator.status {
+            case .localOnly:
+                Image(systemName: "iphone")
+                Text("Saved on this device")
             case .syncing:
                 ProgressView().controlSize(.mini)
-                Text("Syncing…")
+                Text("Backing up…")
             case .offline:
                 Image(systemName: "wifi.slash")
-                Text(coordinator.pendingCount > 0
-                     ? "^[\(coordinator.pendingCount) change](inflect: true) waiting"
-                     : "Offline")
-            case .paused(let reason):
-                Image(systemName: "icloud.slash")
-                Text(reason)
+                Text(coordinator.hasPendingChanges ? "Offline — changes waiting" : "Offline")
+            case .needsSignIn:
+                Image(systemName: "person.crop.circle.badge.exclamationmark")
+                Text("Reconnect \(coordinator.provider.title)")
+            case .storageFull:
+                Image(systemName: "externaldrive.badge.exclamationmark")
+                Text("\(coordinator.provider.title) is full")
             case .error(let message):
                 Image(systemName: "exclamationmark.triangle")
                 Text(message)
             case .idle:
-                if coordinator.pendingCount > 0 {
+                if coordinator.hasPendingChanges {
                     Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("^[\(coordinator.pendingCount) change](inflect: true) waiting")
+                    Text("Changes waiting")
                 } else if let at = coordinator.lastSyncedAt {
                     Image(systemName: "checkmark.icloud")
-                    Text("Synced \(at, format: .relative(presentation: .named))")
+                    Text("Backed up \(at, format: .relative(presentation: .named))")
                 } else {
                     Image(systemName: "externaldrive")
                     Text("Saved on this device")

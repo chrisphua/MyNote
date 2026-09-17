@@ -6,13 +6,6 @@ plugins {
     alias(libs.plugins.ksp)
 }
 
-// Firebase's plugin hard-fails when google-services.json is missing. Applying it
-// conditionally keeps `./gradlew build` working on a fresh clone and in CI,
-// where the file is injected from a secret rather than committed.
-if (file("google-services.json").exists()) {
-    apply(plugin = "com.google.gms.google-services")
-}
-
 android {
     namespace = "io.mynote.app"
     compileSdk = 35
@@ -22,11 +15,17 @@ android {
         minSdk = 26          // covers ~98% of active devices, and gives java.time
         targetSdk = 35
         versionCode = 1
-        versionName = "0.1.0"
+        versionName = "0.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // Overridden per build type below; the app reads it via BuildConfig.
-        buildConfigField("String", "API_BASE_URL", "\"https://mynote-api.workers.dev\"")
+        // OAuth client id for Google Drive. Empty in the repo, which simply
+        // means Drive is not offered — the app still builds, runs and stores
+        // notes locally. Injected from a secret in CI.
+        buildConfigField(
+            "String",
+            "GOOGLE_OAUTH_CLIENT_ID",
+            "\"${System.getenv("GOOGLE_OAUTH_CLIENT_ID") ?: ""}\""
+        )
     }
 
     signingConfigs {
@@ -47,7 +46,6 @@ android {
         debug {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
-            buildConfigField("String", "API_BASE_URL", "\"https://mynote-api-staging.workers.dev\"")
         }
         release {
             isMinifyEnabled = true
@@ -112,11 +110,7 @@ dependencies {
 
     implementation(libs.datastore.preferences)
 
-    implementation(platform(libs.firebase.bom))
-    implementation(libs.firebase.auth)
-    implementation(libs.androidx.credentials)
-    implementation(libs.androidx.credentials.play.services)
-    implementation(libs.googleid)
+    implementation(libs.play.services.auth)
 
     implementation(libs.billing.ktx)
 

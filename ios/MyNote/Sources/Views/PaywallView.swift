@@ -4,9 +4,8 @@ import MyNoteCore
 
 /// The paywall.
 ///
-/// Two separate things are on sale, and the copy says so plainly: a one-time
-/// unlock for themes, and a subscription for sync. Bundling them would force
-/// people who only want their own colours into a recurring charge.
+/// One product, one price, paid once. There is no server behind MyNote, so there
+/// is no recurring cost to cover and no honest case for a recurring charge.
 struct PaywallView: View {
     @Environment(AppEnvironment.self) private var app
     @Environment(ThemeManager.self) private var theme
@@ -19,44 +18,8 @@ struct PaywallView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header
-
-                    if app.purchases.loadFailed {
-                        unavailableNotice
-                    } else {
-                        purchaseCard(
-                            id: .themesLifetime,
-                            title: "Custom themes",
-                            subtitle: "One payment, yours for good",
-                            bullets: [
-                                "Design your own colour palettes for light and dark",
-                                "Choose fonts, text size and line height",
-                                "Tune spacing, corners and page width",
-                                "Unlimited saved themes",
-                            ]
-                        )
-
-                        purchaseCard(
-                            id: .syncYearly,
-                            title: "Cloud sync — yearly",
-                            subtitle: "Best value",
-                            bullets: [
-                                "Your notes on every device you sign in to",
-                                "iPhone, iPad and Android share one account",
-                                "1 GB for images and attachments",
-                                "Keeps working offline; syncs when you're back",
-                            ],
-                            highlighted: true
-                        )
-
-                        purchaseCard(
-                            id: .syncMonthly,
-                            title: "Cloud sync — monthly",
-                            subtitle: "Cancel any time",
-                            bullets: []
-                        )
-                    }
-
-                    crossPlatformNote
+                    card
+                    ownershipNote
                     footer
                 }
                 .padding(20)
@@ -64,7 +27,7 @@ struct PaywallView: View {
                 .frame(maxWidth: .infinity)
             }
             .background(theme.current.background)
-            .navigationTitle("Upgrade")
+            .navigationTitle("MyNote Pro")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
@@ -72,9 +35,8 @@ struct PaywallView: View {
                 }
             }
             .task { await app.purchases.loadProducts() }
-            .onChange(of: app.purchases.entitlements) { _, new in
-                // Dismiss as soon as the thing they came for is unlocked.
-                if !new.isEmpty { dismiss() }
+            .onChange(of: app.purchases.isPro) { _, isPro in
+                if isPro { dismiss() }
             }
         }
     }
@@ -84,42 +46,36 @@ struct PaywallView: View {
             Text("MyNote is free to write in.")
                 .font(theme.current.font(.heading2))
                 .foregroundStyle(theme.current.textPrimary)
-            Text("Unlimited notes, every block type and three themes cost nothing, forever. These two add-ons are what keep it that way.")
+            Text("Unlimited notes, every block type and three themes cost nothing, forever. Pro adds the two things people ask for most.")
                 .font(theme.current.font(.body))
                 .foregroundStyle(theme.current.textSecondary)
         }
     }
 
-    private func purchaseCard(
-        id: PurchaseManager.ProductID,
-        title: String,
-        subtitle: String,
-        bullets: [String],
-        highlighted: Bool = false
-    ) -> some View {
-        let product = app.purchases.product(id)
-        let owned = app.purchases.entitlements.contains(
-            PurchaseManager.entitlement(for: id.rawValue) ?? ""
-        )
-
-        return VStack(alignment: .leading, spacing: 12) {
+    private var card: some View {
+        VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
+                    Text("MyNote Pro")
                         .font(theme.current.font(.heading3))
                         .foregroundStyle(theme.current.textPrimary)
-                    Text(subtitle)
+                    Text("One payment. Yours for good.")
                         .font(theme.current.font(.caption))
                         .foregroundStyle(theme.current.textSecondary)
                 }
                 Spacer()
-                Text(product?.displayPrice ?? "—")
+                Text(app.purchases.product?.displayPrice ?? "—")
                     .font(theme.current.font(.heading3))
                     .foregroundStyle(theme.current.textPrimary)
                     .monospacedDigit()
             }
 
-            ForEach(bullets, id: \.self) { bullet in
+            ForEach([
+                "Design your own themes — colours for light and dark, fonts, spacing, corners",
+                "Back up to your own iCloud Drive or Google Drive",
+                "Keep every device in step, automatically",
+                "Your notes stay in storage you control. We host nothing.",
+            ], id: \.self) { bullet in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: "checkmark")
                         .font(.caption)
@@ -131,31 +87,35 @@ struct PaywallView: View {
             }
 
             Button {
-                guard let product else { return }
-                Task { await app.purchases.purchase(product) }
+                Task { await app.purchases.purchase() }
             } label: {
-                Text(owned ? "Already yours" : "Continue")
+                Text(app.purchases.isPro ? "Already yours" : "Unlock Pro")
                     .frame(maxWidth: .infinity)
             }
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
-            .disabled(product == nil || owned || app.purchases.isPurchasing)
+            .disabled(app.purchases.product == nil || app.purchases.isPro || app.purchases.isPurchasing)
+
+            if app.purchases.loadFailed {
+                Text("Couldn't load the price. Check your connection.")
+                    .font(theme.current.font(.caption))
+                    .foregroundStyle(theme.current.textSecondary)
+            }
         }
         .padding(16)
         .background(theme.current.surface)
         .clipShape(RoundedRectangle(cornerRadius: theme.current.cornerRadius))
         .overlay {
             RoundedRectangle(cornerRadius: theme.current.cornerRadius)
-                .stroke(highlighted ? theme.current.accentColor : theme.current.border,
-                        lineWidth: highlighted ? 2 : 1)
+                .stroke(theme.current.accentColor, lineWidth: 2)
         }
     }
 
-    private var crossPlatformNote: some View {
+    private var ownershipNote: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "iphone.and.arrow.forward")
+            Image(systemName: "lock.icloud")
                 .foregroundStyle(theme.current.accentColor)
-            Text("Buy once, on either platform. Sign in with the same account on Android and it's already unlocked.")
+            Text("Buy on either platform. If you back up to Google Drive, connecting the same account on Android unlocks Pro there too — the receipt travels with your notes.")
                 .font(theme.current.font(.caption))
                 .foregroundStyle(theme.current.textSecondary)
         }
@@ -163,16 +123,6 @@ struct PaywallView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(theme.current.surface.opacity(0.6))
         .clipShape(RoundedRectangle(cornerRadius: theme.current.cornerRadius))
-    }
-
-    private var unavailableNotice: some View {
-        Text("Prices couldn't be loaded. Check your connection and try again.")
-            .font(theme.current.font(.body))
-            .foregroundStyle(theme.current.textSecondary)
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.current.surface)
-            .clipShape(RoundedRectangle(cornerRadius: theme.current.cornerRadius))
     }
 
     private var footer: some View {
@@ -190,15 +140,10 @@ struct PaywallView: View {
                     isRestoring = false
                 }
             } label: {
-                if isRestoring { ProgressView() } else { Text("Restore purchases") }
+                if isRestoring { ProgressView() } else { Text("Restore purchase") }
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.current.accentColor)
-
-            // Apple requires subscription terms to be visible at the point of sale.
-            Text("Subscriptions renew automatically until cancelled. Manage or cancel in Settings › Apple ID › Subscriptions at least 24 hours before the period ends.")
-                .font(theme.current.font(.caption))
-                .foregroundStyle(theme.current.textSecondary)
 
             HStack(spacing: 16) {
                 Link("Terms", destination: URL(string: "https://mynote.io/terms")!)

@@ -1,102 +1,67 @@
 # Deployment
 
-Everything ships from GitHub Actions. Nothing is deployed from a laptop.
+Everything ships from GitHub Actions. There is no backend to deploy — only two
+apps.
 
 | Workflow | Trigger | Does |
 |---|---|---|
-| `backend.yml` | push to `main` under `backend/` | test → migrate+deploy staging → **manual approval** → migrate+deploy production → smoke test |
 | `ios.yml` | push / PR under `ios/`, tag `ios-v*` | core tests → build → TestFlight on tag |
 | `android.yml` | push / PR under `android/`, tag `android-v*` | core tests → debug build → Play internal on tag |
 | `code-review.yml` | every non-draft PR | automated review against `.claude/agents/code-reviewer.md` |
 
-Releases are cut by **tagging**, so merging to `main` never ships an app by
-itself:
+Releases are cut by **tagging**, so merging to `main` never ships by itself:
 
 ```bash
-git tag ios-v0.1.0     && git push origin ios-v0.1.0
-git tag android-v0.1.0 && git push origin android-v0.1.0
+git tag ios-v0.2.0     && git push origin ios-v0.2.0
+git tag android-v0.2.0 && git push origin android-v0.2.0
 ```
-
-Migrations always run before the Worker that reads them, so a new column exists
-by the time the code needing it is live. That makes every migration necessarily
-**backwards-compatible** — add columns, never rename or drop in the same release.
 
 ---
 
 ## First-time setup
 
-Roughly two hours end to end, most of it waiting on store consoles.
+Shorter than it used to be: there is no Cloudflare account, no database, no
+Firebase project and no server secrets.
 
-### 1. Cloudflare — the backend
+### 1. Google Cloud — Drive access
 
-```bash
-cd backend
-npx wrangler login
+Needed only for Google Drive backup. Skip it and the app still ships with iCloud
+and local-only.
 
-npx wrangler d1 create mynote
-npx wrangler d1 create mynote-staging
-npx wrangler r2 bucket create mynote-attachments
-npx wrangler r2 bucket create mynote-attachments-staging
-```
+1. Create a project at [console.cloud.google.com](https://console.cloud.google.com).
+2. Enable the **Google Drive API**.
+3. Configure the **OAuth consent screen** as External. Add the single scope
+   `.../auth/drive.file`.
+4. Create OAuth client ids:
+   - **iOS** — bundle id `io.mynote.app`
+   - **Android** — package `io.mynote.app` plus your signing certificate SHA-1
+   - **Web** — needed as the `serverClientId` for Android's offline access
 
-Paste the two database ids into `wrangler.toml`, then:
+> **`drive.file` needs no security assessment.** It grants per-file access to
+> files the app created. Requesting `drive` or `drive.readonly` instead would
+> put you into Google's restricted-scope review, which is slow and expensive.
+> Do not widen the scope.
 
-```bash
-npm run migrate:remote
-npx wrangler deploy
-```
+**Publish the consent screen** before release, or sign-in is capped at 100 test
+users.
 
-**Free tier limits:** 100k Worker requests/day, 5 GB D1, 10 GB R2. Past roughly
-300 active syncing users you need Workers Paid at $5/month. See
-[COSTS.md](COSTS.md).
+### 2. Apple — iCloud and the store
 
-### 2. Firebase — identity only
-
-Create a project at [console.firebase.google.com](https://console.firebase.google.com).
-Under **Authentication → Sign-in method**, enable **Google**, **Apple** and
-**Email/Password**.
-
-Add two apps and download the config:
-
-| Platform | Bundle / package | File | Goes in |
-|---|---|---|---|
-| iOS | `io.mynote.app` | `GoogleService-Info.plist` | `ios/MyNote/Resources/` |
-| Android | `io.mynote.app` | `google-services.json` | `android/app/` |
-
-Both are **gitignored**. Without them the apps run local-only, which is exactly
-what CI does on pull requests.
-
-Set the project id on the Worker:
-
-```bash
-# wrangler.toml → [vars] FIREBASE_PROJECT_ID = "your-project-id"
-npx wrangler deploy
-```
-
-> Sign in with Apple must be enabled in the Apple Developer portal too, and
-> Apple **requires** it in any app offering Google sign-in. Skipping it is a
-> guaranteed review rejection.
-
-### 3. App Store Connect — iOS
-
-1. Register the bundle id `io.mynote.app`, with the **In-App Purchase** and
-   **Sign in with Apple** capabilities.
-2. Create the three products from [MONETIZATION.md](MONETIZATION.md).
-3. **Enrol in the Small Business Program.** 15% instead of 30%. Do this before
-   your first sale — it is worth $1.50 on every $9.99 unlock.
-4. Create an **App Store Connect API key** (Users and Access → Integrations),
+1. Register the bundle id `io.mynote.app` with **iCloud** (CloudKit/Documents)
+   and **In-App Purchase** capabilities.
+2. Create the iCloud container `iCloud.io.mynote.app`.
+3. Create the in-app purchase `io.mynote.pro`, non-consumable, $14.99.
+4. **Enrol in the Small Business Program.** 15% instead of 30%. Do this before
+   your first sale.
+5. Create an **App Store Connect API key** (Users and Access → Integrations),
    role *App Manager*. Keep the `.p8`; it downloads once.
-5. Point **App Store Server Notifications V2** at
-   `https://<your-worker>/v1/webhooks/apple`.
 
-### 4. Play Console — Android
+### 3. Play Console
 
 1. Create the app with package `io.mynote.app`.
-2. Create the same three products.
-3. Create a **service account** in Google Cloud with the *Android Publisher*
-   role, grant it access in Play Console, and download its JSON key.
-4. Enable **Real-time developer notifications** via Pub/Sub, pushing to
-   `https://<your-worker>/v1/webhooks/google?key=<PUBSUB_SHARED_SECRET>`.
+2. Create the in-app product `io.mynote.pro`, one-time, $14.99.
+3. Create a **service account** with the *Android Publisher* role for CI
+   uploads.
 
 Generate an upload keystore and **back it up somewhere you will not lose it** —
 losing it means you can never update the app under the same listing:
@@ -106,29 +71,15 @@ keytool -genkey -v -keystore release.jks -keyalg RSA -keysize 2048 \
         -validity 10000 -alias mynote
 ```
 
-### 5. Worker secrets
-
-```bash
-cd backend
-npx wrangler secret put APPLE_PRIVATE_KEY       # contents of the .p8
-npx wrangler secret put GOOGLE_SA_PRIVATE_KEY   # private_key from the SA JSON
-npx wrangler secret put PUBSUB_SHARED_SECRET    # any long random string
-```
-
-And in `wrangler.toml` under `[vars]`: `APPLE_ISSUER_ID`, `APPLE_KEY_ID`,
-`GOOGLE_SA_EMAIL`, `FIREBASE_PROJECT_ID`.
-
-### 6. GitHub secrets
+### 4. GitHub secrets
 
 Repository → Settings → Secrets and variables → Actions.
 
 | Secret | From |
 |---|---|
-| `CLOUDFLARE_API_TOKEN` | Cloudflare → My Profile → API Tokens (*Edit Cloudflare Workers*) |
-| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard sidebar |
 | `ANTHROPIC_API_KEY` | console.anthropic.com — used by the PR review |
-| `IOS_GOOGLE_SERVICE_INFO_PLIST` | `base64 -i GoogleService-Info.plist` |
-| `ANDROID_GOOGLE_SERVICES_JSON` | `base64 -i google-services.json` |
+| `IOS_GOOGLE_OAUTH_CLIENT_ID` | the iOS OAuth client id |
+| `ANDROID_GOOGLE_OAUTH_CLIENT_ID` | the **Web** OAuth client id (Android needs it for offline access) |
 | `ASC_KEY_ID`, `ASC_ISSUER_ID` | App Store Connect API key |
 | `ASC_PRIVATE_KEY` | `base64 -i AuthKey_XXXX.p8` |
 | `MATCH_GIT_URL`, `MATCH_PASSWORD`, `MATCH_GIT_BASIC_AUTHORIZATION` | fastlane match certificate repo |
@@ -136,13 +87,10 @@ Repository → Settings → Secrets and variables → Actions.
 | `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`, `ANDROID_KEY_PASSWORD` | your keystore |
 | `PLAY_SERVICE_ACCOUNT_JSON` | the service account JSON, verbatim |
 
-Also add a repository **variable** `PRODUCTION_API_URL` for the deploy smoke test.
+Create two **environments**, `ios-release` and `android-release`, and add a
+required reviewer to each so a store submission is always a deliberate act.
 
-Create three **environments** — `staging`, `production`, `ios-release`,
-`android-release` — and add a required reviewer to `production` so a backend
-release is always a deliberate act.
-
-### 7. Signing certificates (iOS)
+### 5. Signing certificates (iOS)
 
 ```bash
 cd ios
@@ -151,46 +99,57 @@ bundle exec fastlane match appstore
 ```
 
 `match` keeps certificates in a private git repo so CI and your laptop use the
-same ones. Alternatively use Xcode Cloud-style automatic signing and drop the
-`match` step from `Fastfile`.
+same ones.
 
 ---
 
 ## Running locally
 
 ```bash
-# Backend, against a local D1 and R2 — no Cloudflare account needed
-cd backend && npm install && npm run migrate:local && npm run dev
+cd ios/MyNoteCore && swift test
+cd ios && xcodegen generate && open MyNote.xcodeproj
 
-# Point the apps at it
-#   iOS:     ios/MyNote/Info.plist → MyNoteAPIBaseURL
-#   Android: android/app/build.gradle.kts → API_BASE_URL (debug)
+cd android && ./gradlew :core:test :app:assembleDebug
 ```
 
-To exercise purchases without spending money: iOS uses a StoreKit configuration
-file in the scheme; Android needs a signed build uploaded to the internal test
-track with your account added as a licence tester.
+Neither app needs credentials to build or run. To try Google Drive locally, set
+`MyNoteGoogleClientID` in `ios/MyNote/Info.plist`, or export
+`GOOGLE_OAUTH_CLIENT_ID` before the Gradle build.
+
+To exercise the purchase without spending money: iOS uses a StoreKit
+configuration file in the scheme; Android needs a signed build on the internal
+test track with your account as a licence tester.
+
+## Verifying a real backup
+
+The most useful manual test, and the one worth doing before every release:
+
+1. Connect Google Drive on device A. Write a note.
+2. Open Drive in a browser. There should be a `MyNote` folder containing
+   `device-<id>.json`. **Open it** — it is readable JSON, and the note should be
+   in it.
+3. Connect the same Drive on device B (ideally the other platform). The note
+   should appear.
+4. Edit the same block on both devices while B is in airplane mode. Reconnect.
+   The newer edit wins and neither device loses anything else.
 
 ## Rollback
 
-```bash
-# Backend — Cloudflare keeps previous versions
-cd backend && npx wrangler rollback
+There is no backend, so rollback is App Store / Play only: expire the TestFlight
+build, reject the submission, or halt the staged rollout.
 
-# iOS — expire the TestFlight build, or reject the App Store submission
-# Android — halt the staged rollout in Play Console
-```
-
-Mobile rollback is slow and partial by nature, which is why the backend keeps
-migrations additive: a client one version behind must keep working.
+Which is why the **file format** matters more than it would with a server: a
+client one version behind must keep reading what a newer one writes. `format` is
+checked on read, unknown fields are ignored, and the version is only bumped for
+a genuinely breaking change.
 
 ## Troubleshooting
 
 | Symptom | Cause |
 |---|---|
-| `402` from `/v1/sync` | No active `cloud_sync` entitlement. Expected for free accounts. |
-| `401 bad_token` | `FIREBASE_PROJECT_ID` on the Worker does not match the app's Firebase project. |
-| Purchases never unlock | Webhook URL wrong, or the Worker's IAP secrets are unset. Check the `iap_events` table. |
-| Play refunds a purchase after 3 days | It was never acknowledged. The Worker does this; confirm the service account has *Android Publisher*. |
-| Android build fails on `google-services.json` | Only applied when the file exists — confirm the CI step wrote it. |
+| Drive option missing | No OAuth client id in the build. Expected on a fresh clone. |
+| "Reconnect Google Drive" | Access revoked in the user's Google account, or the consent screen is still in testing mode with the user not on the test list. |
+| iCloud option missing or failing | The user is signed out of iCloud, or iCloud Drive is off for the app. |
+| Notes not appearing on the other device | They chose iCloud on one and Drive on the other — the two do not meet. Check the storage picker on both. |
+| `403 insufficient scope` | The OAuth client was created for the wrong bundle id / package, or the scope was changed. |
 | iOS build cannot find the Xcode project | It is generated, not committed. Run `xcodegen generate`. |
