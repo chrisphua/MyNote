@@ -148,6 +148,15 @@ ORDER BY server_seq ASC LIMIT ?3
 The cursor is persisted **only after every change in the page is durable**, so a
 crash mid-apply replays the page rather than skipping it.
 
+An **empty page returns the cursor the client sent**, never the current counter
+value. Sequence numbers are allocated before their rows commit, so a device that
+pulls in that window would otherwise adopt a cursor covering rows it has not
+seen — and never see them.
+
+Records are keyed `(uid, id)`, not `id`. Ids are client-generated, and a global
+key would make a cross-account collision resolve to a silent no-op that the
+loser's client still treated as accepted.
+
 ## Validation
 
 `backend/src/sync.ts` is the trust boundary. A change is rejected — not retried —
@@ -164,6 +173,7 @@ instead of looping forever.
 | `content_not_json` / `spec_not_json` | Not parseable JSON |
 | `content_too_large` | Over 64 KB |
 | `self_parent` | A record naming itself as its parent |
+| `bad_order_key` | Outside base 62, or ending in the lowest digit |
 
 Unknown *keys* are dropped rather than rejected, so an older server stays
 compatible with a newer client.
@@ -176,7 +186,9 @@ theme, 25 MB per attachment.
 1. Write locally first. Return to the user immediately.
 2. Queue the change in a **durable** outbox — it must survive a force-quit.
 3. Debounce ~2s, then sync. Coalesce repeated edits to one record.
-4. Remove from the outbox **only** on confirmation, or on explicit rejection.
+4. Remove from the outbox **only** on confirmation or explicit rejection, and
+   **only by `(key, hlc)`** — an edit that rewrote the row while the push was in
+   flight must survive.
 5. On `402`, show the paywall. On a network error, keep the queue and retry.
 6. Flush the backlog when connectivity returns.
 

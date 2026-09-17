@@ -84,3 +84,23 @@ export function pemToDer(pem: string): ArrayBuffer {
   for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
   return out.buffer;
 }
+
+/**
+ * The `appAccountToken` we attach to every StoreKit purchase.
+ *
+ * Apple requires a UUID, so one is derived deterministically from the Firebase
+ * uid — both the app and the Worker can compute it with no extra round trip and
+ * no stored mapping. It is what stops someone from claiming a transaction id
+ * they did not pay for: the token in Apple's copy of the transaction must match
+ * the caller.
+ */
+export async function appAccountToken(uid: string): Promise<string> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`mynote:${uid}`)),
+  );
+  const b = digest.slice(0, 16);
+  b[6] = (b[6]! & 0x0f) | 0x50;   // version 5 (name-based)
+  b[8] = (b[8]! & 0x3f) | 0x80;   // RFC 4122 variant
+  const hex = [...b].map((x) => x.toString(16).padStart(2, '0')).join('');
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+}

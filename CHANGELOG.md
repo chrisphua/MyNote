@@ -28,6 +28,7 @@ version number so a bug report maps to one commit.
 - **CI/CD** — GitHub Actions for backend (test → staging → production with a
   smoke test), iOS (core tests → build → TestFlight on tag) and Android (tests →
   debug build → Play internal on tag), plus an automated code review on every PR.
+- **117 tests** — 35 backend (against real D1), 36 iOS core, 46 Android core.
 
 ### Fixed
 
@@ -42,3 +43,50 @@ version number so a bug report maps to one commit.
 - **Play webhooks resolved the wrong account.** A notification was matched to any
   user holding that product id. Purchase tokens are now stored on `iap_links` and
   looked up directly.
+
+Found by the code-review agent before first release:
+
+- **An edit made while a push was in flight was lost.** The outbox collapses a
+  burst of typing onto one row per record, and entries were removed by record id
+  — so a keystroke landing during the round trip overwrote the row that was then
+  deleted as "confirmed". The edit was never sent, the UI reported "synced", and
+  it was gone on reinstall. Removal is now by `(key, hlc)`, so a row rewritten in
+  flight survives and goes out on the next pass.
+- **iOS purchases never reached the server.** `PurchaseManager.configure` was
+  defined but never called, so no entitlement row was ever written for an Apple
+  buyer: sync returned `402` forever to someone who had paid. Neither client
+  fetched `/v1/entitlements` either, so cross-platform unlocking did not work in
+  either direction. Both are now wired at launch and on every auth change.
+- **Switching accounts leaked notes between them.** Sign-out cleared only the
+  Firebase session. Local rows carry no `uid`, so the previous account's queued
+  edits were pushed into the next account, and the new account inherited a cursor
+  that hid its own server records. Local data is now wiped when the signed-in
+  account changes.
+- **The sync cursor could skip a page.** Sequence numbers are allocated before
+  the rows commit, so a device pulling an empty page in that window adopted a
+  cursor covering rows it had not seen. An empty page now holds the cursor where
+  the client had it.
+- **A cross-account id collision silently dropped a note.** `id` was a global
+  primary key, so a second account writing the same id resolved to a no-op that
+  the client still treated as accepted. The key is now `(uid, id)`.
+- **Apple transactions were claimable by whoever sent them first.** Transaction
+  ids are numeric and guessable, and `/v1/iap/apple/verify` granted to the
+  caller. Purchases now carry an `appAccountToken` derived from the Firebase uid,
+  which the server verifies.
+- **Hybrid logical clocks restarted from wall time on every launch**, so a
+  backwards system-clock change made new edits sort below the server's copy and
+  be silently discarded. The clock now resumes above the newest local edit.
+- **Counter overflow was unhandled when merging a peer's clock** — Swift wrapped
+  to zero (moving the clock backwards), TypeScript and Kotlin widened the encoded
+  field from four hex digits to five, breaking the fixed-width ordering the
+  server's `>` depends on. All three now carry into millis, as `tick` did.
+- **Android queued the record and its outbox entry in separate transactions**, so
+  process death between them left an edit that would never sync. Both writes are
+  now one transaction, and repeated edits keep their place in the queue instead
+  of moving to the back.
+- **Themes synced but never appeared.** Rows were stored and never read back into
+  the theme picker on either platform.
+- **The claimed cross-platform clock test vectors did not exist** in TypeScript or
+  Swift, leaving the encodings unguarded. All three suites now assert them.
+- Malformed `order_key` values are rejected at the API boundary rather than
+  corrupting ordering for every client.

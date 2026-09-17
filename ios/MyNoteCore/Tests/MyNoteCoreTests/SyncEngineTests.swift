@@ -82,8 +82,9 @@ struct SyncEngineTests {
     @Test("applies a remote change that is newer than the local copy")
     func appliesNewerRemote() async throws {
         let store = InMemoryStore()
-        try await store.enqueue(change("b1", "0000000000000064-0000-devA", text: "local"))
-        try await store.removeFromOutbox([ChangeKey(entity: .block, id: "b1")])
+        let existing = change("b1", "0000000000000064-0000-devA", text: "local")
+        try await store.enqueue(existing)
+        try await store.removeFromOutbox([existing])
 
         let remote = change("b1", "00000000000000c8-0000-devB", text: "remote")
         let api = FakeAPI(responses: [response(cursor: 3, changes: [remote])])
@@ -161,5 +162,96 @@ struct SyncEngineTests {
             #expect(next > previous)
             previous = next
         }
+    }
+}
+
+/// Runs a side effect during the *first* request only, to reproduce a user
+/// typing while a push is in flight. Records every batch it was sent.
+actor RacingAPI: SyncAPI {
+    private let duringFirstFlight: @Sendable () async -> Void
+    private var calls = 0
+    private(set) var pushedBatches: [[Change]] = []
+
+    init(duringFirstFlight: @escaping @Sendable () async -> Void) {
+        self.duringFirstFlight = duringFirstFlight
+    }
+
+    func sync(cursor: Int, changes: [Change], limit: Int?) async throws -> SyncResponse {
+        pushedBatches.append(changes)
+        calls += 1
+        if calls == 1 { await duringFirstFlight() }
+        return SyncResponse(cursor: cursor + changes.count, changes: [],
+                            hasMore: false, serverTime: 0, rejected: [])
+    }
+}
+
+@Suite("Sync engine — the in-flight edit")
+struct SyncEngineRaceTests {
+
+    @Test("an edit made during a push still reaches the server")
+    func inFlightEditIsNotLost() async throws {
+        let store = InMemoryStore()
+        let laterHlc = "0000000000000190-0000-devA"
+
+        // The outbox collapses edits to one row per record, so a keystroke
+        // landing mid-request overwrites the very row being confirmed. Removing
+        // by key alone would delete it here, unsent and unrecoverable.
+        let api = RacingAPI {
+            try? await store.enqueue(change("b1", laterHlc, text: "typed during push"))
+        }
+        let engine = SyncEngine(store: store, api: api, deviceId: "devA")
+
+        try await engine.enqueue(change("b1", "0000000000000064-0000-devA", text: "first"))
+        _ = await engine.sync()
+
+        // The engine keeps going while the outbox is non-empty, so the newer
+        // edit goes out on the next pass rather than being dropped.
+        let batches = await api.pushedBatches
+        let everySentHlc = batches.flatMap { $0 }.map(\.hlc)
+        #expect(everySentHlc.contains(laterHlc),
+                "the edit made during the push was never sent to the server")
+
+        // And once it has been confirmed, nothing is left queued.
+        #expect(try await store.outbox(limit: 10).isEmpty)
+    }
+
+    @Test("the version that was actually pushed is removed")
+    func confirmedVersionIsRemoved() async throws {
+        let store = InMemoryStore()
+        let api = FakeAPI(responses: [response(cursor: 5)])
+        let engine = SyncEngine(store: store, api: api, deviceId: "devA")
+
+        try await engine.enqueue(change("b1", await engine.stamp()))
+        _ = await engine.sync()
+
+        #expect(try await store.outbox(limit: 10).isEmpty)
+    }
+
+    @Test("the clock resumes above the newest local edit after a relaunch")
+    func clockSeedsFromStore() async throws {
+        let store = InMemoryStore()
+        // An edit stamped far in the future of the wall clock — what a backwards
+        // system-clock change leaves behind.
+        let ahead = "0000200000000000-0000-devA"
+        try await store.enqueue(change("b1", ahead))
+
+        // A fresh engine, as after a relaunch.
+        let engine = SyncEngine(store: store, api: FakeAPI(), deviceId: "devA")
+        let next = await engine.stamp()
+
+        #expect(next > ahead, "a new stamp must sort above edits this device already made")
+    }
+
+    @Test("signing into a different account leaves nothing behind")
+    func clearAllWipesEverything() async throws {
+        let store = InMemoryStore()
+        try await store.enqueue(change("b1", "0000000000000064-0000-devA", text: "previous account"))
+        try await store.setCursor(99)
+
+        try await store.clearAll()
+
+        #expect(try await store.outbox(limit: 10).isEmpty)
+        #expect(try await store.cursor() == 0)
+        #expect(await store.record(.block, "b1") == nil)
     }
 }

@@ -28,6 +28,7 @@ public actor SyncEngine {
     private let api: any SyncAPI
     private let batchSize: Int
     private var clock: HybridLogicalClock
+    private var didSeedClock = false
 
     public private(set) var state: State = .idle
 
@@ -40,8 +41,24 @@ public actor SyncEngine {
 
     /// Stamp a local edit. Always call this rather than building an hlc by hand,
     /// so the device's clock stays monotonic across edits.
-    public func stamp() -> String {
-        clock.tick(now: Int64(Date().timeIntervalSince1970 * 1000))
+    public func stamp() async -> String {
+        await seedClockIfNeeded()
+        return clock.tick(now: Int64(Date().timeIntervalSince1970 * 1000))
+    }
+
+    /// Bring the clock up to the newest edit this device already knows about.
+    ///
+    /// The in-memory clock starts from wall time, and wall time can move
+    /// backwards between launches — a timezone fix, an NTP correction, a manual
+    /// change. Without this, the next edit would stamp *below* the server's copy,
+    /// the server's `excluded.hlc > hlc` guard would silently no-op it, and the
+    /// local copy would diverge permanently.
+    private func seedClockIfNeeded() async {
+        guard !didSeedClock else { return }
+        didSeedClock = true
+        guard let newest = try? await store.newestHlc(),
+              let seen = HybridLogicalClock.decode(newest) else { return }
+        clock.observe(seen, now: Int64(Date().timeIntervalSince1970 * 1000))
     }
 
     public func enqueue(_ change: Change) async throws {
@@ -50,6 +67,7 @@ public actor SyncEngine {
 
     @discardableResult
     public func sync() async -> Result<SyncOutcome, APIError> {
+        await seedClockIfNeeded()
         state = .syncing
         var totalPushed = 0
         var totalPulled = 0
@@ -85,12 +103,21 @@ public actor SyncEngine {
                 return .failure(.decoding("local write failed"))
             }
 
-            // A rejected change is permanently invalid; retrying would loop forever.
+            // Everything we sent is now resolved: accepted, or rejected as
+            // permanently invalid (retrying those would loop forever). Hand the
+            // batch back so the store can drop each row only if it still holds
+            // the version we pushed.
             let rejectedKeys = Set(response.rejected.map { ChangeKey(entity: $0.entity, id: $0.id) })
-            let acceptedKeys = pending.map(\.key).filter { !rejectedKeys.contains($0) }
-            try? await store.removeFromOutbox(acceptedKeys + Array(rejectedKeys))
+            do {
+                try await store.removeFromOutbox(pending)
+            } catch {
+                // Swallowing this would leave the batch queued with nothing left
+                // to pull, and the loop below would re-push it forever.
+                state = .failed("could not update the local queue")
+                return .failure(.decoding("outbox update failed"))
+            }
 
-            totalPushed += acceptedKeys.count
+            totalPushed += pending.count - rejectedKeys.count
             totalPulled += response.changes.count
             allRejected += response.rejected
             cursor = response.cursor

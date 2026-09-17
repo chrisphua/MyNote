@@ -1,6 +1,6 @@
 import { HttpError } from '../types';
 import type { Env } from '../types';
-import { decodeJwsPayload, signEs256 } from '../jwt';
+import { appAccountToken, decodeJwsPayload, signEs256 } from '../jwt';
 import { productFor } from '../products';
 import { grantEntitlement, revokeByTransaction } from '../entitlements';
 
@@ -17,6 +17,7 @@ interface AppleTransaction {
   revocationReason?: number;
   bundleId: string;
   type: string;
+  appAccountToken?: string;
 }
 
 /** App Store Connect API token — ES256, short-lived, regenerated per request. */
@@ -68,9 +69,21 @@ async function fetchTransaction(env: Env, transactionId: string): Promise<AppleT
   throw new HttpError(502, `Apple verification failed (${lastStatus})`, 'apple_unavailable');
 }
 
-function applyTransaction(env: Env, uid: string, txn: AppleTransaction) {
+async function applyTransaction(env: Env, uid: string, txn: AppleTransaction) {
   if (txn.bundleId !== env.APPLE_BUNDLE_ID) {
     throw new HttpError(400, 'transaction belongs to a different app', 'bundle_mismatch');
+  }
+
+  // Apple transaction ids are numeric and guessable. Without this check, anyone
+  // who guessed one could claim a stranger's purchase — and, because the first
+  // claim wins in `iap_links`, lock the real buyer out of what they paid for.
+  // Purchases made through our app always carry the token; one that does not
+  // came from somewhere else, and falls back to first-claim binding.
+  if (txn.appAccountToken) {
+    const expected = await appAccountToken(uid);
+    if (txn.appAccountToken.toLowerCase() !== expected.toLowerCase()) {
+      throw new HttpError(403, 'this purchase belongs to a different account', 'account_mismatch');
+    }
   }
   const product = productFor(txn.productId);
   if (!product) throw new HttpError(400, `unknown product ${txn.productId}`, 'unknown_product');
@@ -99,6 +112,9 @@ export async function verifyAppleTransaction(env: Env, uid: string, transactionI
   await applyTransaction(env, uid, txn);
   return txn;
 }
+
+/** Exposed so the client can be told which token to stamp on a purchase. */
+export { appAccountToken };
 
 /**
  * App Store Server Notifications V2.

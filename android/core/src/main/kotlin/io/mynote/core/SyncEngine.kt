@@ -53,6 +53,7 @@ class SyncEngine(
 ) {
     private val mutex = Mutex()
     private var clock = Hlc(clockSource(), 0, deviceId)
+    private var didSeedClock = false
 
     @Volatile
     var state: SyncState = SyncState.Idle
@@ -62,14 +63,33 @@ class SyncEngine(
      * Stamp a local edit. Always use this rather than building an hlc by hand, so
      * the device's clock stays monotonic even if the system clock jumps back.
      */
-    suspend fun stamp(): String = mutex.withLock {
-        clock = clock.tick(clockSource())
-        clock.encoded()
+    suspend fun stamp(): String {
+        seedClockIfNeeded()
+        return mutex.withLock {
+            clock = clock.tick(clockSource())
+            clock.encoded()
+        }
+    }
+
+    /**
+     * Bring the clock up to the newest edit this device already knows about.
+     *
+     * The in-memory clock starts from wall time, and wall time can move
+     * backwards between launches — a timezone fix, an NTP correction, a manual
+     * change. Without this, the next edit would stamp *below* the server's copy,
+     * the server's `excluded.hlc > hlc` guard would silently no-op it, and the
+     * local copy would diverge permanently.
+     */
+    private suspend fun seedClockIfNeeded() {
+        mutex.withLock { if (didSeedClock) return else didSeedClock = true }
+        val seen = store.newestHlc()?.let(Hlc::decode) ?: return
+        mutex.withLock { clock = clock.observe(seen, clockSource()) }
     }
 
     suspend fun enqueue(change: Change) = store.enqueue(change)
 
     suspend fun sync(): Result<SyncOutcome> {
+        seedClockIfNeeded()
         state = SyncState.Syncing
         var pushed = 0
         var pulled = 0
@@ -93,12 +113,14 @@ class SyncEngine(
 
             apply(response)
 
-            // A rejected change is permanently invalid; retrying would loop forever.
+            // Everything we sent is now resolved: accepted, or rejected as
+            // permanently invalid (retrying those would loop forever). Hand the
+            // batch back so the store can drop each row only if it still holds
+            // the version we pushed.
             val rejectedKeys = response.rejected.map { ChangeKey(it.entity, it.id) }.toSet()
-            val acceptedKeys = pendingBatch.map { it.key }.filterNot { it in rejectedKeys }
-            store.removeFromOutbox(acceptedKeys + rejectedKeys)
+            store.removeFromOutbox(pendingBatch)
 
-            pushed += acceptedKeys.size
+            pushed += pendingBatch.size - rejectedKeys.size
             pulled += response.changes.size
             rejected += response.rejected
             cursor = response.cursor

@@ -1,4 +1,5 @@
 import Foundation
+import CryptoKit
 import StoreKit
 import MyNoteCore
 
@@ -61,6 +62,33 @@ final class PurchaseManager {
         verifyWithServer = verifier
     }
 
+    /// Who is buying. Set before presenting the paywall.
+    ///
+    /// Stamped onto the purchase as `appAccountToken` so the server can prove
+    /// the transaction belongs to this account. Apple transaction ids are
+    /// numeric and guessable; without it, anyone who guessed one could claim a
+    /// stranger's purchase and lock the real buyer out of what they paid for.
+    func setBuyer(uid: String?) {
+        buyerToken = uid.map(Self.appAccountToken(for:))
+    }
+
+    private var buyerToken: UUID?
+
+    /// Deterministic UUID from the Firebase uid — the same derivation the
+    /// Worker uses, so neither side needs a stored mapping or a round trip.
+    /// Must stay in step with `appAccountToken` in `backend/src/jwt.ts`.
+    static func appAccountToken(for uid: String) -> UUID {
+        var hasher = SHA256()
+        hasher.update(data: Data("mynote:\(uid)".utf8))
+        var bytes = Array(hasher.finalize().prefix(16))
+        bytes[6] = (bytes[6] & 0x0f) | 0x50   // version 5 (name-based)
+        bytes[8] = (bytes[8] & 0x3f) | 0x80   // RFC 4122 variant
+        return UUID(uuid: (bytes[0], bytes[1], bytes[2], bytes[3],
+                           bytes[4], bytes[5], bytes[6], bytes[7],
+                           bytes[8], bytes[9], bytes[10], bytes[11],
+                           bytes[12], bytes[13], bytes[14], bytes[15]))
+    }
+
     func loadProducts() async {
         do {
             products = try await Product.products(for: ProductID.allCases.map(\.rawValue))
@@ -83,7 +111,10 @@ final class PurchaseManager {
         defer { isPurchasing = false }
 
         do {
-            switch try await product.purchase() {
+            var options: Set<Product.PurchaseOption> = []
+            if let buyerToken { options.insert(.appAccountToken(buyerToken)) }
+
+            switch try await product.purchase(options: options) {
             case .success(let verification):
                 guard case .verified(let transaction) = verification else {
                     // StoreKit could not verify its own signature: treat as fraud.

@@ -54,19 +54,30 @@ export function tick(local: Hlc, now: number): Hlc {
   return { millis: local.millis, counter, node: local.node };
 }
 
-/** Merge a remote clock on receive, so our clock never lags behind what we've seen. */
+/**
+ * Merge a remote clock on receive, so our clock never lags behind what we've seen.
+ *
+ * The counter is carried into millis on overflow, exactly as `tick` does. A
+ * peer can legitimately send `counter = ffff`, and letting it increment to
+ * 0x10000 would widen the encoded field from four hex digits to five — which
+ * silently breaks the fixed-width lexicographic ordering the SQL `>` relies on.
+ */
 export function receive(local: Hlc, remote: Hlc, now: number): Hlc {
   const maxMillis = Math.max(local.millis, remote.millis, now);
+
+  let counter: number;
   if (maxMillis === local.millis && maxMillis === remote.millis) {
-    return { millis: maxMillis, counter: Math.max(local.counter, remote.counter) + 1, node: local.node };
+    counter = Math.max(local.counter, remote.counter) + 1;
+  } else if (maxMillis === local.millis) {
+    counter = local.counter + 1;
+  } else if (maxMillis === remote.millis) {
+    counter = remote.counter + 1;
+  } else {
+    counter = 0;
   }
-  if (maxMillis === local.millis) {
-    return { millis: maxMillis, counter: local.counter + 1, node: local.node };
-  }
-  if (maxMillis === remote.millis) {
-    return { millis: maxMillis, counter: remote.counter + 1, node: local.node };
-  }
-  return { millis: maxMillis, counter: 0, node: local.node };
+
+  if (counter > MAX_COUNTER) return { millis: maxMillis + 1, counter: 0, node: local.node };
+  return { millis: maxMillis, counter, node: local.node };
 }
 
 /**

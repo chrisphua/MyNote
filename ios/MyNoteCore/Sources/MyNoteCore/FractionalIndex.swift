@@ -28,9 +28,12 @@ public enum FractionalIndex {
     /// A key strictly between `a` and `b`. `nil` means "no neighbour on that side".
     ///
     /// Precondition: if both are given, `a < b`.
+    /// Invalid input (`a >= b`, or a `b` that violates the trailing-digit
+    /// invariant) yields a best-effort key rather than a crash or a hang. The
+    /// server rejects malformed order keys at the boundary, so reaching this is
+    /// already a bug elsewhere — and mis-ordering one block beats killing the
+    /// editor while someone is writing. Kotlin behaves identically.
     public static func between(_ a: String?, _ b: String?) -> String {
-        assert(!(a != nil && b != nil) || a! < b!, "between requires a < b, got \(a!) and \(b!)")
-
         let lower = Array(a ?? "")
         var upper: [Character]? = b.map(Array.init)
         var result = ""

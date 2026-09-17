@@ -104,3 +104,19 @@ class HlcTest {
         }
     }
 }
+
+class HlcOverflowTest {
+    @Test
+    fun `merge carries the counter into millis rather than widening the field`() {
+        // A peer can legitimately send counter = ffff. Incrementing past it would
+        // encode five hex digits and break the fixed-width ordering the server's
+        // SQL `>` depends on, making every later comparison wrong.
+        val local = Hlc(1000, Hlc.MAX_COUNTER, "a")
+        val remote = Hlc(1000, Hlc.MAX_COUNTER, "b")
+        val merged = local.observe(remote, 1000)
+
+        assertTrue(merged.counter <= Hlc.MAX_COUNTER)
+        assertEquals(4, merged.encoded().split("-")[1].length)
+        assertTrue(merged.encoded() > local.encoded())
+    }
+}

@@ -19,7 +19,7 @@ function block(id: string, text: string, at: number, node = 'devA'): Change {
     deleted: false,
     fields: {
       note_id: 'note-1',
-      order_key: 'a0',
+      order_key: 'V',
       type: 'paragraph',
       content: JSON.stringify({ text }),
     },
@@ -116,11 +116,11 @@ describe('sync', () => {
     const res = await sync(USER, 0, [
       block('good', 'fine', 1000),
       { entity: 'block', id: 'bad-type', hlc: hlc(1000), deleted: false,
-        fields: { note_id: 'n', order_key: 'a0', type: 'nonsense', content: '{}' } },
+        fields: { note_id: 'n', order_key: 'V', type: 'nonsense', content: '{}' } },
       { entity: 'block', id: 'bad-json', hlc: hlc(1000), deleted: false,
-        fields: { note_id: 'n', order_key: 'a0', type: 'paragraph', content: 'not json' } },
+        fields: { note_id: 'n', order_key: 'V', type: 'paragraph', content: 'not json' } },
       { entity: 'block', id: 'bad-clock', hlc: 'garbage', deleted: false,
-        fields: { note_id: 'n', order_key: 'a0', type: 'paragraph', content: '{}' } },
+        fields: { note_id: 'n', order_key: 'V', type: 'paragraph', content: '{}' } },
       { entity: 'note', id: 'no-order-key', hlc: hlc(1000), deleted: false, fields: { title: 'x' } },
     ] as Change[]);
 
@@ -169,7 +169,7 @@ describe('sync', () => {
   it('syncs notes, themes and attachments through the same cursor', async () => {
     await sync(USER, 0, [
       { entity: 'note', id: 'n1', hlc: hlc(1000), deleted: false,
-        fields: { title: 'Trip', order_key: 'a0' } },
+        fields: { title: 'Trip', order_key: 'V' } },
       { entity: 'theme', id: 't1', hlc: hlc(1001), deleted: false,
         fields: { name: 'Midnight', spec: JSON.stringify({ bg: '#000' }) } },
       { entity: 'attachment', id: 'a1', hlc: hlc(1002), deleted: false,
@@ -186,5 +186,61 @@ describe('sync', () => {
   it('refuses an oversized batch rather than partially applying it', async () => {
     const huge = Array.from({ length: 501 }, (_, i) => block(`x${i}`, 't', 1000 + i));
     await expect(sync(USER, 0, huge)).rejects.toThrow(/at most 500/);
+  });
+});
+
+describe('sync — concurrency and isolation', () => {
+  it('does not advance the cursor past rows that are not visible yet', async () => {
+    // `allocateSeq` bumps the counter before the batch inserts. A device that
+    // pulls an empty page in that window must not adopt the counter value, or it
+    // would skip the rows being written and never see them again.
+    await sync(USER, 0, [block('b1', 'first', 1000)]);
+    const settled = await sync(USER, 0, []);
+
+    // Simulate another device reserving sequence numbers without committing.
+    await env.DB.prepare(
+      `INSERT INTO counters (uid, seq) VALUES (?1, ?2)
+       ON CONFLICT(uid) DO UPDATE SET seq = seq + ?2`,
+    ).bind(USER.uid, 5).run();
+
+    const empty = await sync(USER, settled.cursor, []);
+    expect(empty.changes).toHaveLength(0);
+    expect(empty.cursor).toBe(settled.cursor);
+  });
+
+  it('lets two accounts use the same record id independently', async () => {
+    // Ids are client-generated. A collision across accounts must write both
+    // rows, not silently drop whichever arrived second.
+    await sync(USER, 0, [block('shared-id', 'mine', 1000)]);
+    await sync(OTHER, 0, [block('shared-id', 'theirs', 2000)]);
+
+    const mine = await sync(USER, 0, []);
+    const theirs = await sync(OTHER, 0, []);
+
+    expect(JSON.parse(mine.changes[0]!.fields.content as string).text).toBe('mine');
+    expect(JSON.parse(theirs.changes[0]!.fields.content as string).text).toBe('theirs');
+  });
+
+  it('rejects an order key that nothing could sort below', async () => {
+    const bad = (key: string): Change => ({
+      entity: 'note', id: `n-${key}`, hlc: hlc(1000), deleted: false,
+      fields: { title: 'x', order_key: key },
+    });
+
+    const res = await sync(USER, 0, [bad('a0'), bad('a/b'), bad('')]);
+    // 'a0' ends in the lowest digit; 'a/b' is outside the alphabet; '' is empty.
+    expect(res.rejected.map((r) => r.reason).sort())
+      .toEqual(['bad_order_key', 'bad_order_key', 'missing_order_key']);
+    expect(res.changes).toHaveLength(0);
+  });
+
+  it('accepts the order keys the clients actually generate', async () => {
+    const good = (key: string): Change => ({
+      entity: 'note', id: `n-${key}`, hlc: hlc(1000), deleted: false,
+      fields: { title: 'x', order_key: key },
+    });
+    const res = await sync(USER, 0, [good('V'), good('a1'), good('0V'), good('zzZ9')]);
+    expect(res.rejected).toHaveLength(0);
+    expect(res.changes).toHaveLength(4);
   });
 });

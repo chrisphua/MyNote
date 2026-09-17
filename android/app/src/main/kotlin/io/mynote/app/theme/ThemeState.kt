@@ -81,6 +81,30 @@ class ThemeState(context: Context) {
         if (_current.value.id == spec.id) select(ThemeSpec.defaultTheme)
     }
 
+    /**
+     * Adopt custom themes pulled from another device.
+     *
+     * A synced theme wins over the local copy of the same id, because sync has
+     * already resolved which version is newer.
+     */
+    fun mergeSynced(specs: List<ThemeSpec>) {
+        if (specs.isEmpty()) return
+        val byId = _custom.value.associateBy { it.id }.toMutableMap()
+        for (spec in specs) byId[spec.id] = spec.sanitized()
+        _custom.value = byId.values.toList()
+        persist()
+
+        // Keep showing the selected theme if its definition just changed.
+        byId[_current.value.id]?.let { _current.value = it }
+    }
+
+    /** Drop everything custom — used when the signed-in account changes. */
+    fun forgetSyncedThemes() {
+        _custom.value = emptyList()
+        persist()
+        select(ThemeSpec.defaultTheme)
+    }
+
     /** Start a new theme from what is on screen, so editing feels like tweaking. */
     fun draftFromCurrent(): ThemeSpec {
         val base = _current.value

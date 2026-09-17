@@ -34,15 +34,19 @@ struct RootView: View {
         .sheet(isPresented: $showingSettings) {
             SettingsView()
         }
-        .task {
-            await app.purchases.loadProducts()
-            await app.purchases.refreshLocalEntitlements()
-            app.themeManager.canEdit = app.purchases.canCustomizeThemes
-            await app.syncCoordinator.refreshPendingCount()
-            await app.syncCoordinator.syncNow()
-        }
+        .task { await app.start() }
         .onChange(of: app.purchases.entitlements) { _, _ in
             app.themeManager.canEdit = app.purchases.canCustomizeThemes
+        }
+        .onChange(of: app.auth.status) { _, _ in
+            // Signing in or switching accounts: re-scope local data, then adopt
+            // whatever that account owns — including purchases made on Android.
+            Task {
+                await app.reconcileAccount()
+                await app.refreshEntitlements()
+                app.loadSyncedThemes()
+                await app.syncCoordinator.syncNow()
+            }
         }
     }
 }

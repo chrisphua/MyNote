@@ -23,6 +23,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import io.mynote.app.AppContainer
 import io.mynote.app.theme.LocalMyNoteColors
@@ -55,8 +56,20 @@ fun MyNoteRoot(
         container.themeState.canEdit = "theme_pro" in entitlements
     }
 
+    val authStatus by container.auth.status.collectAsState()
+    val appContext = LocalContext.current.applicationContext
+
     LaunchedEffect(Unit) {
         container.billing.refreshLocalEntitlements()
+        container.loadSyncedThemes()
+    }
+
+    // Signing in or switching accounts: re-scope local data, then adopt whatever
+    // that account owns — including purchases made on iOS.
+    LaunchedEffect(authStatus) {
+        container.reconcileAccount(appContext)
+        container.refreshEntitlements()
+        container.loadSyncedThemes()
         container.syncCoordinator.syncNow()
     }
 

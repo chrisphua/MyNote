@@ -25,8 +25,11 @@ object FractionalIndex {
      * Requires `a < b` when both are given.
      */
     fun between(a: String?, b: String?): String {
-        require(a == null || b == null || a < b) { "between requires a < b, got $a and $b" }
-
+        // Invalid input (`a >= b`, or a `b` violating the trailing-digit
+        // invariant) yields a best-effort key rather than an exception. The
+        // server rejects malformed order keys at the boundary, so reaching this
+        // is already a bug elsewhere — and mis-ordering one block beats crashing
+        // the editor while someone is writing. Swift behaves identically.
         val lower = a ?: ""
         var upper: String? = b
         val result = StringBuilder()

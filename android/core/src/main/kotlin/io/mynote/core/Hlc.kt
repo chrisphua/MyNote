@@ -24,16 +24,24 @@ data class Hlc(
         else -> copy(counter = counter + 1)
     }
 
-    /** Merge a clock we received, so we never issue an edit that sorts older. */
+    /**
+     * Merge a clock we received, so we never issue an edit that sorts older.
+     *
+     * The counter carries into millis on overflow, exactly as [tick] does. A
+     * peer can legitimately send `counter = ffff`, and incrementing past it
+     * would encode a five-digit counter field — silently breaking the
+     * fixed-width lexicographic ordering the server's SQL `>` depends on.
+     */
     fun observe(remote: Hlc, now: Long): Hlc {
         val maxMillis = maxOf(millis, remote.millis, now)
-        return when {
-            maxMillis == millis && maxMillis == remote.millis ->
-                copy(millis = maxMillis, counter = maxOf(counter, remote.counter) + 1)
-            maxMillis == millis -> copy(millis = maxMillis, counter = counter + 1)
-            maxMillis == remote.millis -> copy(millis = maxMillis, counter = remote.counter + 1)
-            else -> copy(millis = maxMillis, counter = 0)
+        val next = when {
+            maxMillis == millis && maxMillis == remote.millis -> maxOf(counter, remote.counter) + 1
+            maxMillis == millis -> counter + 1
+            maxMillis == remote.millis -> remote.counter + 1
+            else -> 0
         }
+        return if (next > MAX_COUNTER) copy(millis = maxMillis + 1, counter = 0)
+        else copy(millis = maxMillis, counter = next)
     }
 
     companion object {

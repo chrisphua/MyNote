@@ -3,6 +3,7 @@ package io.mynote.core
 import kotlinx.coroutines.test.runTest
 import kotlinx.serialization.json.JsonPrimitive
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -83,8 +84,9 @@ class SyncEngineTest {
     @Test
     fun `applies a remote change that is newer than the local copy`() = runTest {
         val store = InMemoryStore()
-        store.enqueue(block("b1", "0000000000000064-0000-devA", text = "local"))
-        store.removeFromOutbox(listOf(ChangeKey(Entity.BLOCK, "b1")))
+        val existing = block("b1", "0000000000000064-0000-devA", text = "local")
+        store.enqueue(existing)
+        store.removeFromOutbox(listOf(existing))
 
         val remote = block("b1", "00000000000000c8-0000-devB", text = "remote")
         val engine = SyncEngine(store, FakeApi(mutableListOf(response(3, listOf(remote)))), "devA")
@@ -154,5 +156,76 @@ class SyncEngineTest {
             assertTrue("$next not greater than $previous", next > previous)
             previous = next
         }
+    }
+}
+
+/**
+ * Runs a side effect during the *first* request only, to reproduce a user typing
+ * while a push is in flight. Records every batch it was sent.
+ */
+private class RacingApi(private val duringFirstFlight: suspend () -> Unit) : SyncApi {
+    val pushedBatches = mutableListOf<List<Change>>()
+    private var calls = 0
+
+    override suspend fun sync(cursor: Int, changes: List<Change>, limit: Int?): SyncResponse {
+        pushedBatches += changes
+        calls++
+        if (calls == 1) duringFirstFlight()
+        return SyncResponse(cursor + changes.size, emptyList(), hasMore = false, serverTime = 0)
+    }
+}
+
+class SyncEngineRaceTest {
+
+    @Test
+    fun `an edit made during a push still reaches the server`() = runTest {
+        val store = InMemoryStore()
+        val laterHlc = "0000000000000190-0000-devA"
+
+        // The outbox collapses edits to one row per record, so a keystroke
+        // landing mid-request overwrites the very row being confirmed. Removing
+        // by key alone would delete it here, unsent and unrecoverable.
+        val api = RacingApi {
+            store.enqueue(block("b1", laterHlc, text = "typed during push"))
+        }
+        val engine = SyncEngine(store, api, "devA")
+
+        engine.enqueue(block("b1", "0000000000000064-0000-devA", text = "first"))
+        engine.sync()
+
+        val everySentHlc = api.pushedBatches.flatten().map { it.hlc }
+        assertTrue(
+            "the edit made during the push was never sent to the server",
+            laterHlc in everySentHlc,
+        )
+        assertTrue(store.outbox(10).isEmpty())
+    }
+
+    @Test
+    fun `the clock resumes above the newest local edit after a relaunch`() = runTest {
+        val store = InMemoryStore()
+        // An edit stamped far ahead of the wall clock — what a backwards system
+        // clock change leaves behind.
+        val ahead = "0000200000000000-0000-devA"
+        store.enqueue(block("b1", ahead))
+
+        // A fresh engine, as after a relaunch, with a wall clock well behind it.
+        val engine = SyncEngine(store, FakeApi(), "devA", clockSource = { 1_000L })
+        val next = engine.stamp()
+
+        assertTrue("$next must sort above $ahead", next > ahead)
+    }
+
+    @Test
+    fun `signing into a different account leaves nothing behind`() = runTest {
+        val store = InMemoryStore()
+        store.enqueue(block("b1", "0000000000000064-0000-devA", text = "previous account"))
+        store.setCursor(99)
+
+        store.clearAll()
+
+        assertTrue(store.outbox(10).isEmpty())
+        assertEquals(0, store.cursor())
+        assertNull(store.record(Entity.BLOCK, "b1"))
     }
 }

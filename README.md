@@ -75,13 +75,17 @@ See [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) to wire up the real services.
 
 | Suite | Count | Runs in |
 |---|---|---|
-| `backend` (vitest, real D1) | 27 | ~1s |
-| `ios/MyNoteCore` (swift-testing) | 23 | <1s |
-| `android/core` (JUnit) | 42 | ~2s |
+| `backend` (vitest, real D1) | 35 | ~1s |
+| `ios/MyNoteCore` (swift-testing) | 36 | <1s |
+| `android/core` (JUnit) | 46 | ~2s |
 
 They cover the things that are expensive to get wrong: conflict resolution,
 outbox durability, tenant isolation, cross-platform clock encoding, entitlement
 grants and refunds, and the ordering-key invariant.
+
+Several exist because a bug got through. The one guarding an edit made *while a
+push is in flight* is the most important in the project — it was verified by
+reintroducing the bug and watching it fail.
 
 ## Money
 

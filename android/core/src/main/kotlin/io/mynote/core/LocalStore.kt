@@ -16,8 +16,34 @@ interface LocalStore {
     suspend fun outbox(limit: Int): List<Change>
     suspend fun enqueue(change: Change)
 
-    /** Drop outbox entries the server accepted (or permanently rejected). */
-    suspend fun removeFromOutbox(keys: List<ChangeKey>)
+    /**
+     * Drop outbox entries the server has resolved — accepted or permanently
+     * rejected — identified by the exact version that was sent.
+     *
+     * Removal is by `(key, hlc)`, never by key alone. The store collapses a
+     * burst of typing onto one outbox row, so a keystroke landing *while a push
+     * is in flight* overwrites that row with a newer clock. Deleting by key
+     * would drop the newer edit without ever having sent it: silent, permanent
+     * note loss.
+     */
+    suspend fun removeFromOutbox(sent: List<Change>)
+
+    /**
+     * Newest clock this device has seen, across records and the outbox.
+     *
+     * Used to seed the clock at launch so it cannot restart behind its own
+     * previous edits after the system clock moves backwards.
+     */
+    suspend fun newestHlc(): String?
+
+    /**
+     * Wipe every local record, the outbox and the cursor.
+     *
+     * Called when the signed-in account changes: local rows carry no `uid`, so
+     * without this the previous account's queued edits would be pushed into the
+     * new one.
+     */
+    suspend fun clearAll()
 
     /** The clock on our copy of a record, or null if we have never seen it. */
     suspend fun currentHlc(entity: Entity, id: String): String?
@@ -45,8 +71,21 @@ class InMemoryStore : LocalStore {
         pending[change.key] = change
     }
 
-    override suspend fun removeFromOutbox(keys: List<ChangeKey>) = mutex.withLock {
-        keys.forEach { pending.remove(it) }
+    override suspend fun removeFromOutbox(sent: List<Change>) = mutex.withLock {
+        for (change in sent) {
+            // Only if this is still the version we pushed.
+            if (pending[change.key]?.hlc == change.hlc) pending.remove(change.key)
+        }
+    }
+
+    override suspend fun newestHlc(): String? = mutex.withLock {
+        (records.values.map { it.hlc } + pending.values.map { it.hlc }).maxOrNull()
+    }
+
+    override suspend fun clearAll() = mutex.withLock {
+        records.clear()
+        pending.clear()
+        cursorValue = 0
     }
 
     override suspend fun currentHlc(entity: Entity, id: String): String? =

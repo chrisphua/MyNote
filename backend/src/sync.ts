@@ -3,7 +3,7 @@ import type { Change, Entity, Env, SyncRequest, SyncResponse } from './types';
 import { ENTITIES } from './types';
 import { BLOCK_TYPES, LIMITS, TABLES } from './schema';
 import { isPlausible } from './hlc';
-import { allocateSeq, currentSeq, existingHlcs, pullChanges, upsertStatement } from './db';
+import { allocateSeq, existingHlcs, pullChanges, upsertStatement } from './db';
 import type { AuthedUser } from './auth';
 
 interface Rejection { entity: Entity; id: string; reason: string }
@@ -68,9 +68,18 @@ function validate(raw: unknown, now: number): Change | Rejection {
     }
   }
   if (sized(clean.order_key, LIMITS.maxOrderKeyLength)) return { entity, id, reason: 'order_key_too_long' };
+  // Order keys are compared lexicographically against locally generated ones,
+  // so a key outside the base-62 alphabet — or one ending in the lowest digit,
+  // which nothing can sort below — would corrupt ordering for every client.
+  if (clean.order_key !== undefined && !ORDER_KEY.test(String(clean.order_key))) {
+    return { entity, id, reason: 'bad_order_key' };
+  }
 
   return { entity, id, hlc: c.hlc, deleted: false, fields: clean };
 }
+
+/** Base-62, and never ending in '0' — see `FractionalIndex`. */
+const ORDER_KEY = /^[0-9A-Za-z]*[1-9A-Za-z]$/;
 
 function isJson(v: unknown): boolean {
   if (typeof v !== 'string') return false;
@@ -142,7 +151,11 @@ export async function handleSync(req: Request, env: Env, user: AuthedUser): Prom
   const hasMore = changes.length > limit;
   const page = hasMore ? changes.slice(0, limit) : changes;
 
-  const nextCursor = page.length > 0 ? page[page.length - 1]!.serverSeq! : await currentSeq(env, user.uid);
+  // On an empty page, hold the cursor where the client had it. `allocateSeq`
+  // bumps the counter *before* the batch inserts, so the counter can name rows
+  // another device has reserved but not yet committed — adopting it here would
+  // skip those rows permanently.
+  const nextCursor = page.length > 0 ? page[page.length - 1]!.serverSeq! : cursor;
 
   return { cursor: nextCursor, changes: page, hasMore, serverTime: now, rejected };
 }

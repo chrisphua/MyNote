@@ -21,6 +21,9 @@ interface NoteDao {
     @Query("SELECT hlc FROM notes WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT MAX(hlc) FROM notes")
+    suspend fun maxHlc(): String?
+
     @Upsert
     suspend fun upsert(row: NoteRow)
 }
@@ -39,6 +42,9 @@ interface BlockDao {
     @Query("SELECT hlc FROM blocks WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT MAX(hlc) FROM blocks")
+    suspend fun maxHlc(): String?
+
     @Upsert
     suspend fun upsert(row: BlockRow)
 }
@@ -54,6 +60,12 @@ interface ThemeDao {
     @Query("SELECT hlc FROM themes WHERE id = :id LIMIT 1")
     suspend fun hlc(id: String): String?
 
+    @Query("SELECT MAX(hlc) FROM themes")
+    suspend fun maxHlc(): String?
+
+    @Query("SELECT * FROM themes WHERE deleted = 0")
+    suspend fun allActive(): List<ThemeRow>
+
     @Upsert
     suspend fun upsert(row: ThemeRow)
 }
@@ -66,11 +78,26 @@ interface OutboxDao {
     @Query("SELECT COUNT(*) FROM outbox")
     fun observeCount(): Flow<Int>
 
-    @Insert(onConflict = OnConflictStrategy.REPLACE)
-    suspend fun upsert(row: OutboxRow)
+    /**
+     * Update in place rather than REPLACE, so a record edited repeatedly keeps
+     * its original `queuedAt` and does not keep jumping to the back of the FIFO.
+     */
+    @Query("UPDATE outbox SET hlc = :hlc, deleted = :deleted, fieldsJson = :fields WHERE `key` = :key")
+    suspend fun updateExisting(key: String, hlc: String, deleted: Boolean, fields: String): Int
 
-    @Query("DELETE FROM outbox WHERE `key` IN (:keys)")
-    suspend fun deleteKeys(keys: List<String>)
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertIfAbsent(row: OutboxRow): Long
+
+    /**
+     * Delete only if the row still holds the version that was pushed. A
+     * keystroke landing during the round trip rewrites the row with a newer
+     * clock, and deleting that would lose the edit unsent.
+     */
+    @Query("DELETE FROM outbox WHERE `key` = :key AND hlc = :hlc")
+    suspend fun deleteConfirmed(key: String, hlc: String)
+
+    @Query("SELECT MAX(hlc) FROM outbox")
+    suspend fun maxHlc(): String?
 }
 
 @Dao

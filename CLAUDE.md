@@ -52,6 +52,12 @@ suite.** There is no build-time check for this; the vectors are the only guard.
 
 ## Traps that have already caused bugs
 
+- **Never remove an outbox entry by record id alone.** The outbox collapses a
+  burst of typing onto one row, so a keystroke landing while a push is in flight
+  rewrites the row being confirmed. Delete by `(key, hlc)` or that edit is lost
+  unsent — this is the single most expensive bug the project has had.
+- **Local rows carry no `uid`.** Anything that changes the signed-in account must
+  wipe the local database first, or one account's notes are pushed into another.
 - **An order key must never end in `'0'`.** Nothing sorts below `"0"`, so
   `between(null, "0")` has no answer. This once looped forever and hung the test
   suite for fourteen minutes.

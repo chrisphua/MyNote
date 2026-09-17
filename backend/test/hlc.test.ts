@@ -2,6 +2,27 @@ import { describe, expect, it } from 'vitest';
 import { compareHlc, decodeHlc, encodeHlc, isPlausible, receive, tick } from '../src/hlc';
 
 describe('hlc', () => {
+  /**
+   * Shared vectors.
+   *
+   * The identical pairs are asserted in `HlcTest.kt` and
+   * `HybridLogicalClockTests.swift`. These three encodings must agree byte for
+   * byte — the server compares clocks with a plain SQL `>` — and these vectors
+   * are the only thing that catches a drift.
+   */
+  it('encodes to the cross-platform format', () => {
+    expect(encodeHlc({ millis: 0x18f5a2b3c4d, counter: 7, node: 'deviceA' }))
+      .toBe('0000018f5a2b3c4d-0007-deviceA');
+    expect(encodeHlc({ millis: 0, counter: 0, node: 'a' }))
+      .toBe('0000000000000000-0000-a');
+    expect(encodeHlc({ millis: 1000, counter: 0xffff, node: 'node-with-dashes' }))
+      .toBe('00000000000003e8-ffff-node-with-dashes');
+  });
+
+  it('decodes a node id containing dashes', () => {
+    expect(decodeHlc('000000000000007b-0004-abc-def-ghi').node).toBe('abc-def-ghi');
+  });
+
   it('round-trips through encode/decode', () => {
     const h = { millis: 1_700_000_000_000, counter: 7, node: 'deviceA' };
     expect(decodeHlc(encodeHlc(h))).toEqual(h);
@@ -35,6 +56,27 @@ describe('hlc', () => {
     const merged = receive(local, remote, 1001);
     expect(merged.millis).toBe(5000);
     expect(encodeHlc(merged) > encodeHlc(remote)).toBe(true);
+  });
+
+  it('carries the counter into millis rather than widening the field', () => {
+    // A peer can legitimately send counter = ffff. Incrementing past it would
+    // encode five hex digits and break the fixed-width ordering the SQL `>`
+    // depends on, making every later comparison wrong.
+    const local = { millis: 1000, counter: 0xffff, node: 'a' };
+    const remote = { millis: 1000, counter: 0xffff, node: 'b' };
+    const merged = receive(local, remote, 1000);
+
+    expect(merged.counter).toBeLessThanOrEqual(0xffff);
+    expect(encodeHlc(merged).split('-')[1]).toHaveLength(4);
+    expect(encodeHlc(merged) > encodeHlc(local)).toBe(true);
+  });
+
+  it('keeps tick within the counter field too', () => {
+    const saturated = { millis: 1000, counter: 0xffff, node: 'a' };
+    const next = tick(saturated, 1000);
+    expect(next.millis).toBe(1001);
+    expect(next.counter).toBe(0);
+    expect(encodeHlc(next) > encodeHlc(saturated)).toBe(true);
   });
 
   it('rejects a clock implausibly far in the future', () => {

@@ -185,8 +185,24 @@ export async function handleGoogleNotification(env: Env, message: unknown) {
   };
 
   if (decoded.voidedPurchaseNotification) {
-    const orderId = decoded.voidedPurchaseNotification.orderId;
-    if (orderId) await revokeByTransaction(env, 'google', orderId.split('..')[0]!);
+    const { orderId, purchaseToken } = decoded.voidedPurchaseNotification;
+    if (orderId) {
+      await revokeByTransaction(env, 'google', orderId.split('..')[0]!);
+      return { handled: true, kind: 'voided' };
+    }
+    // Play does not always include an orderId. The token is the handle we keyed
+    // the account link on, so fall back to it rather than silently keeping a
+    // refunded purchase active.
+    const uid = await uidForPurchaseToken(env, purchaseToken);
+    if (!uid) return { handled: false, kind: 'voided_unlinked' };
+    await env.DB.prepare(
+      `UPDATE entitlements SET status = 'revoked', updated_at = ?
+       WHERE uid = ? AND original_txn_id IN (
+         SELECT original_txn_id FROM iap_links WHERE platform = 'google' AND purchase_token = ?
+       )`,
+    )
+      .bind(Date.now(), uid, purchaseToken)
+      .run();
     return { handled: true, kind: 'voided' };
   }
 

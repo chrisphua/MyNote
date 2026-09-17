@@ -72,14 +72,57 @@ actor SwiftDataStore: LocalStore {
         try modelContext.save()
     }
 
-    func removeFromOutbox(_ keys: [ChangeKey]) throws {
-        guard !keys.isEmpty else { return }
-        let encoded = Set(keys.map { "\($0.entity.rawValue):\($0.id)" })
+    func removeFromOutbox(_ sent: [Change]) throws {
+        guard !sent.isEmpty else { return }
+        // Keyed on (key, hlc): a row re-written by a keystroke that landed while
+        // the push was in flight carries a newer clock and must survive, or that
+        // edit is lost without ever having been sent.
+        var confirmed: [String: String] = [:]
+        for change in sent { confirmed["\(change.entity.rawValue):\(change.id)"] = change.hlc }
+
         for entry in try modelContext.fetch(FetchDescriptor<OutboxEntry>())
-        where encoded.contains(entry.key) {
+        where confirmed[entry.key] == entry.hlc {
             modelContext.delete(entry)
         }
         try modelContext.save()
+    }
+
+    func newestHlc() throws -> String? {
+        // Every edit this device made is in a record, the outbox, or both.
+        var newest: String? = nil
+        func consider(_ candidate: String?) {
+            guard let candidate else { return }
+            if newest == nil || candidate > newest! { newest = candidate }
+        }
+        for row in try modelContext.fetch(FetchDescriptor<OutboxEntry>()) { consider(row.hlc) }
+        for row in try modelContext.fetch(FetchDescriptor<NoteEntity>()) { consider(row.hlc) }
+        for row in try modelContext.fetch(FetchDescriptor<BlockEntity>()) { consider(row.hlc) }
+        for row in try modelContext.fetch(FetchDescriptor<ThemeEntity>()) { consider(row.hlc) }
+        return newest
+    }
+
+    func clearAll() throws {
+        // Local rows carry no uid, so switching accounts on one device must wipe
+        // them: otherwise the previous account's queued edits get pushed into
+        // the new account, and the new account inherits a cursor that makes its
+        // own server rows unreachable.
+        try modelContext.delete(model: OutboxEntry.self)
+        try modelContext.delete(model: NoteEntity.self)
+        try modelContext.delete(model: BlockEntity.self)
+        try modelContext.delete(model: ThemeEntity.self)
+        try modelContext.delete(model: SyncState.self)
+        try modelContext.save()
+    }
+
+    /// Custom themes that arrived from another device.
+    ///
+    /// Themes sync like any other record, but the theme UI reads from
+    /// UserDefaults, so they have to be handed across explicitly at launch.
+    func syncedThemes() throws -> [ThemeSpec] {
+        try modelContext
+            .fetch(FetchDescriptor<ThemeEntity>())
+            .filter { !$0.deleted }
+            .compactMap { ThemeSpec.decode($0.spec)?.sanitized() }
     }
 
     // MARK: - Records

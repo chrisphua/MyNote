@@ -89,8 +89,8 @@ export function upsertStatement(
 
   return env.DB.prepare(
     `INSERT INTO ${spec.table} (${cols.join(', ')}) VALUES (${placeholders})
-     ON CONFLICT(id) DO UPDATE SET ${updates}
-     WHERE ${spec.table}.uid = excluded.uid AND excluded.hlc > ${spec.table}.hlc`,
+     ON CONFLICT(uid, id) DO UPDATE SET ${updates}
+     WHERE excluded.hlc > ${spec.table}.hlc`,
   ).bind(...values);
 }
 
@@ -121,9 +121,9 @@ function tombstoneStatement(
 
   return env.DB.prepare(
     `INSERT INTO ${spec.table} (${cols.join(', ')}) VALUES (${placeholders})
-     ON CONFLICT(id) DO UPDATE SET
+     ON CONFLICT(uid, id) DO UPDATE SET
        hlc = excluded.hlc, server_seq = excluded.server_seq, deleted = 1
-     WHERE ${spec.table}.uid = excluded.uid AND excluded.hlc > ${spec.table}.hlc`,
+     WHERE excluded.hlc > ${spec.table}.hlc`,
   ).bind(...values);
 }
 

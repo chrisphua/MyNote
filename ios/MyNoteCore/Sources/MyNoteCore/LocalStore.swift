@@ -14,8 +14,28 @@ public protocol LocalStore: Sendable {
     func outbox(limit: Int) async throws -> [Change]
     func enqueue(_ change: Change) async throws
 
-    /// Drop outbox entries the server has accepted (or permanently rejected).
-    func removeFromOutbox(_ keys: [ChangeKey]) async throws
+    /// Drop outbox entries the server has resolved — accepted or permanently
+    /// rejected — identified by the exact version that was sent.
+    ///
+    /// Removal is by `(key, hlc)`, never by key alone. Both stores collapse a
+    /// burst of typing onto one outbox row, so a keystroke landing *while a push
+    /// is in flight* overwrites that row with a newer clock. Deleting by key
+    /// would drop the newer edit without ever having sent it: silent, permanent
+    /// note loss.
+    func removeFromOutbox(_ sent: [Change]) async throws
+
+    /// Newest clock this device has seen, across records and the outbox.
+    ///
+    /// Used to seed the clock at launch so it cannot restart behind its own
+    /// previous edits after the system clock moves backwards.
+    func newestHlc() async throws -> String?
+
+    /// Wipe every local record, the outbox and the cursor.
+    ///
+    /// Called when the signed-in account changes: local rows carry no `uid`, so
+    /// without this the previous account's queued edits would be pushed into the
+    /// new one.
+    func clearAll() async throws
 
     /// The clock on our copy of a record, or nil if we have never seen it.
     func currentHlc(_ entity: Entity, _ id: String) async throws -> String?
@@ -60,10 +80,24 @@ public actor InMemoryStore: LocalStore {
         pending[change.key] = change
     }
 
-    public func removeFromOutbox(_ keys: [ChangeKey]) throws {
-        let dropped = Set(keys)
-        for key in dropped { pending.removeValue(forKey: key) }
-        pendingOrder.removeAll { dropped.contains($0) }
+    public func removeFromOutbox(_ sent: [Change]) throws {
+        for change in sent {
+            // Only if this is still the version we pushed.
+            guard pending[change.key]?.hlc == change.hlc else { continue }
+            pending.removeValue(forKey: change.key)
+            pendingOrder.removeAll { $0 == change.key }
+        }
+    }
+
+    public func newestHlc() throws -> String? {
+        (records.values.map(\.hlc) + pending.values.map(\.hlc)).max()
+    }
+
+    public func clearAll() throws {
+        records.removeAll()
+        pending.removeAll()
+        pendingOrder.removeAll()
+        cursorValue = 0
     }
 
     public func currentHlc(_ entity: Entity, _ id: String) throws -> String? {

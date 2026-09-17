@@ -48,18 +48,31 @@ public struct HybridLogicalClock: Sendable, Equatable {
     }
 
     /// Merge a clock we received, so we never issue an edit that sorts older.
+    ///
+    /// The counter carries into millis on overflow, exactly as `tick` does. A
+    /// peer can legitimately send `counter = ffff`, and `&+ 1` would wrap it to
+    /// zero — moving this clock *backwards* and losing the next edit.
     public mutating func observe(_ remote: HybridLogicalClock, now: Int64) {
         let maxMillis = max(millis, remote.millis, now)
+
+        let next: Int
         if maxMillis == millis && maxMillis == remote.millis {
-            counter = max(counter, remote.counter) &+ 1
+            next = Int(max(counter, remote.counter)) + 1
         } else if maxMillis == millis {
-            counter &+= 1
+            next = Int(counter) + 1
         } else if maxMillis == remote.millis {
-            counter = remote.counter &+ 1
+            next = Int(remote.counter) + 1
         } else {
-            counter = 0
+            next = 0
         }
-        millis = maxMillis
+
+        if next > Int(UInt16.max) {
+            millis = maxMillis + 1
+            counter = 0
+        } else {
+            millis = maxMillis
+            counter = UInt16(next)
+        }
     }
 
     public static func now(node: String) -> HybridLogicalClock {

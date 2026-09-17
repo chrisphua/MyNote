@@ -23,7 +23,7 @@ CREATE TABLE IF NOT EXISTS counters (
 );
 
 CREATE TABLE IF NOT EXISTS notes (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL,
   uid          TEXT NOT NULL,
   title        TEXT NOT NULL DEFAULT '',
   icon         TEXT,
@@ -31,12 +31,15 @@ CREATE TABLE IF NOT EXISTS notes (
   order_key    TEXT NOT NULL,        -- fractional index among siblings
   hlc          TEXT NOT NULL,
   server_seq   INTEGER NOT NULL,
-  deleted      INTEGER NOT NULL DEFAULT 0
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  -- Keyed per user, not globally: two accounts generating the same id must
+  -- both succeed, not resolve to a silent no-op for whoever writes second.
+  PRIMARY KEY (uid, id)
 );
 CREATE INDEX IF NOT EXISTS idx_notes_pull ON notes(uid, server_seq);
 
 CREATE TABLE IF NOT EXISTS blocks (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL,
   uid          TEXT NOT NULL,
   note_id      TEXT NOT NULL,
   parent_id    TEXT,                 -- nested blocks (toggles, list children)
@@ -45,24 +48,26 @@ CREATE TABLE IF NOT EXISTS blocks (
   content      TEXT NOT NULL,        -- JSON: { text, checked, lang, attachmentId, ... }
   hlc          TEXT NOT NULL,
   server_seq   INTEGER NOT NULL,
-  deleted      INTEGER NOT NULL DEFAULT 0
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (uid, id)
 );
 CREATE INDEX IF NOT EXISTS idx_blocks_pull ON blocks(uid, server_seq);
 CREATE INDEX IF NOT EXISTS idx_blocks_note ON blocks(note_id, deleted);
 
 CREATE TABLE IF NOT EXISTS themes (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL,
   uid          TEXT NOT NULL,
   name         TEXT NOT NULL,
   spec         TEXT NOT NULL,        -- JSON ThemeSpec
   hlc          TEXT NOT NULL,
   server_seq   INTEGER NOT NULL,
-  deleted      INTEGER NOT NULL DEFAULT 0
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (uid, id)
 );
 CREATE INDEX IF NOT EXISTS idx_themes_pull ON themes(uid, server_seq);
 
 CREATE TABLE IF NOT EXISTS attachments (
-  id           TEXT PRIMARY KEY,
+  id           TEXT NOT NULL,
   uid          TEXT NOT NULL,
   note_id      TEXT,
   r2_key       TEXT NOT NULL,
@@ -70,7 +75,8 @@ CREATE TABLE IF NOT EXISTS attachments (
   size         INTEGER NOT NULL,
   hlc          TEXT NOT NULL,
   server_seq   INTEGER NOT NULL,
-  deleted      INTEGER NOT NULL DEFAULT 0
+  deleted      INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (uid, id)
 );
 CREATE INDEX IF NOT EXISTS idx_attach_pull ON attachments(uid, server_seq);
 

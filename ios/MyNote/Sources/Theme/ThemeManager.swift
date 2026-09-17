@@ -97,6 +97,38 @@ final class ThemeManager {
         if current.spec.id == spec.id { select(ThemeSpec.defaultTheme) }
     }
 
+    /// Adopt custom themes pulled from another device.
+    ///
+    /// Themes sync as ordinary records; this is where they join the picker. A
+    /// synced theme wins over the local copy of the same id, because sync has
+    /// already resolved which version is newer.
+    func mergeSynced(_ specs: [ThemeSpec]) {
+        guard !specs.isEmpty else { return }
+        var merged = customThemes
+        for spec in specs {
+            let clean = spec.sanitized()
+            if let index = merged.firstIndex(where: { $0.id == clean.id }) {
+                merged[index] = clean
+            } else {
+                merged.append(clean)
+            }
+        }
+        customThemes = merged
+        persistCustom()
+
+        // Keep showing the selected theme if its definition just changed.
+        if let refreshed = merged.first(where: { $0.id == current.spec.id }) {
+            current = Theme(spec: refreshed)
+        }
+    }
+
+    /// Drop everything custom — used when the signed-in account changes.
+    func forgetSyncedThemes() {
+        customThemes = []
+        persistCustom()
+        select(ThemeSpec.defaultTheme)
+    }
+
     /// Start a new theme from whatever is on screen, so editing feels like
     /// tweaking rather than building from nothing.
     func draftFromCurrent() -> ThemeSpec {
