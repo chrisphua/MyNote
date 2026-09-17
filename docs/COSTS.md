@@ -29,6 +29,16 @@ be breached. There is no copy of anyone's notes on our side to lose.
 
 **Year one: about $139. Every year after: about $114**, or $9.50 a month.
 
+Google's $25 is genuinely one-time — it covers the account for life and any
+number of apps. Apple's $99 is the only thing that recurs.
+
+The store fees are the cheap part. The expensive part is *time*: a new personal
+Play account must run a 14-day closed test before it can publish at all, and
+neither store lets you sell anything until banking and tax details clear. See
+[the launch timeline](DEPLOYMENT.md#launch-timeline--start-this-before-the-app-is-finished)
+— create both accounts before the app is finished, so those clocks run while you
+are still building.
+
 ## Store commission
 
 Both stores take **15%** for a small developer — Apple through the Small

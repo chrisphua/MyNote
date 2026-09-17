@@ -18,6 +18,89 @@ git tag android-v0.2.0 && git push origin android-v0.2.0
 
 ---
 
+## Launch timeline — start this before the app is finished
+
+The store accounts are the long pole, not the code. Almost everything below is
+waiting on someone else, and none of it can be rushed at the end.
+
+**Create both developer accounts on day one.** The fees are small, the waiting is
+not, and every clock below runs in parallel with development.
+
+### What each store costs
+
+| | Fee | Recurring? |
+|---|---|---|
+| **Google Play** | **$25** | **No** — one-time, covers the account for life, unlimited apps |
+| **Apple Developer Program** | **$99** | **Yes**, annually |
+
+### What each store makes you wait for
+
+**Google Play — the closed-testing requirement.** A **personal** developer
+account created since late 2023 cannot publish straight to production. It must
+first run a **closed test with a group of testers, opted in and running
+continuously for 14 days**, and then *apply* for production access — which is
+itself reviewed.
+
+> **Check the current tester count in Play Console** under *Publishing overview*.
+> It launched at 20 and has since been reduced at least once, so any number
+> written here will go stale. Treat the 14-day duration as the fixed part.
+
+An **organisation** account is exempt from this, but needs a **D-U-N-S number**,
+which is free and typically takes a few business days to issue.
+
+Recruiting testers is the part people underestimate. They must each *accept the
+opt-in link and keep the build installed* — friends, a Discord, a subreddit, a
+mailing list. Start collecting names early.
+
+**Both stores — identity verification.** Apple and Google both verify who you
+are before you can publish. Allow days, not hours.
+
+**Both stores — you cannot sell anything until payments are set up.** This is the
+one that most often blocks a launch at the last moment:
+
+- **Apple:** the *Paid Applications Agreement* must be accepted, and banking and
+  tax forms completed, in App Store Connect → Business. Until then
+  `io.mynote.pro` cannot leave "Missing Metadata", and the paywall has no price
+  to show.
+- **Google:** a payments profile and merchant account must exist before an
+  in-app product can be activated.
+
+Tax forms in particular can bounce back for correction, so do them first.
+
+### A realistic order of operations
+
+| When | Do |
+|---|---|
+| **Now** | Create both developer accounts. Pay the $25 and the $99. Begin identity verification. |
+| **Now** | Start Apple's Paid Applications Agreement and both payment/tax profiles. |
+| **Now** | If going the organisation route on Google, request the D-U-N-S number. |
+| **While building** | Create `io.mynote.pro` on both stores. Enrol in the Apple Small Business Program. |
+| **First working build** | Push to Play **closed testing** and start the 14-day clock. Recruit testers. |
+| **While the clock runs** | TestFlight on iOS, store listings, screenshots, privacy policy, support page. |
+| **Day 14+** | Apply for Play production access. |
+| **After approval** | Submit both. Expect roughly 1–3 days of review each, occasionally longer for a first submission. |
+
+**Budget 3–4 weeks** between "the app is ready" and "it is live on both stores,"
+almost none of which is engineering. If you create the accounts today, most of
+that runs down while you are still writing code.
+
+### Things that will get a first submission rejected
+
+All of these are already handled in the app, but they are worth knowing, because
+a rejection costs another review cycle:
+
+- No visible **Restore purchase** control (both stores require one).
+- Requiring an account to use the app. MyNote has none, which is the safe side
+  of this rule.
+- A missing or unreachable **privacy policy** and **support URL** — both are
+  mandatory, and both need the domain live.
+- A **data safety / privacy nutrition label** that does not match reality.
+  MyNote's is unusually simple: no data is collected, because there is no
+  server. Say exactly that.
+- Google Drive access requesting a scope wider than `drive.file` — see section 1.
+
+---
+
 ## First-time setup
 
 Shorter than it used to be: there is no Cloudflare account, no database, no
@@ -50,17 +133,26 @@ users.
 1. Register the bundle id `io.mynote.app` with **iCloud** (CloudKit/Documents)
    and **In-App Purchase** capabilities.
 2. Create the iCloud container `iCloud.io.mynote.app`.
-3. Create the in-app purchase `io.mynote.pro`, non-consumable, $14.99.
-4. **Enrol in the Small Business Program.** 15% instead of 30%. Do this before
+3. Accept the **Paid Applications Agreement** and complete banking and tax
+   details under Business. Until this is done the in-app purchase stays in
+   "Missing Metadata" and the paywall has no price to show.
+4. Create the in-app purchase `io.mynote.pro`, non-consumable, $14.99.
+5. **Enrol in the Small Business Program.** 15% instead of 30%. Do this before
    your first sale.
-5. Create an **App Store Connect API key** (Users and Access → Integrations),
+6. Create an **App Store Connect API key** (Users and Access → Integrations),
    role *App Manager*. Keep the `.p8`; it downloads once.
 
 ### 3. Play Console
 
+**$25, one-time.** Note the closed-testing requirement for personal accounts in
+[Launch timeline](#launch-timeline--start-this-before-the-app-is-finished) —
+it adds at least two weeks before you can publish, so start it early.
+
 1. Create the app with package `io.mynote.app`.
-2. Create the in-app product `io.mynote.pro`, one-time, $14.99.
-3. Create a **service account** with the *Android Publisher* role for CI
+2. Set up the **payments profile** — an in-app product cannot be activated
+   without one.
+3. Create the in-app product `io.mynote.pro`, one-time, $14.99.
+4. Create a **service account** with the *Android Publisher* role for CI
    uploads.
 
 Generate an upload keystore and **back it up somewhere you will not lose it** —
