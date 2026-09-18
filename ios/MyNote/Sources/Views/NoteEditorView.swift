@@ -169,13 +169,6 @@ struct NoteEditorView: View {
     private func changeType(_ block: BlockEntity, to type: BlockType) async {
         guard var domain = block.asDomain else { return }
         domain.type = type
-
-        // A drawing needs somewhere to keep its ink. Assigned once and kept,
-        // so turning a drawing into text and back finds the same strokes.
-        if type == .drawing, domain.content.attachmentId == nil {
-            domain.content.attachmentId = UUID().uuidString
-        }
-
         await repository.update(block: domain)
     }
 }
@@ -203,7 +196,6 @@ extension BlockType {
         case .code:      "Code"
         case .divider:   "Divider"
         case .image:     "Image"
-        case .drawing:   "Drawing"
         }
     }
 
@@ -220,7 +212,6 @@ extension BlockType {
         case .code:      "chevron.left.forwardslash.chevron.right"
         case .divider:   "minus"
         case .image:     "photo"
-        case .drawing:   "scribble.variable"
         }
     }
 }

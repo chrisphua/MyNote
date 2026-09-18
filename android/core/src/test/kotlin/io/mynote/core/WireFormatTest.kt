@@ -44,23 +44,6 @@ class WireFormatTest {
     }
 
     @Test
-    fun `a drawing block survives a round trip`() {
-        // Android cannot create these, but it must not lose one made on an
-        // iPhone: an unrecognised type is dropped on read, so the enum has to
-        // carry the case even where the editor cannot produce it.
-        val block = Block(
-            id = "d1", noteId = "n1", orderKey = "V",
-            type = BlockType.DRAWING,
-            content = BlockContent(text = "", attachmentId = "ink-1"),
-            hlc = "0000000000000064-0000-devA",
-        )
-        val restored = block.asChange().toBlock()
-        assertEquals(block, restored)
-        assertEquals("drawing", BlockType.DRAWING.wire)
-        assertEquals(BlockType.DRAWING, BlockType.fromWire("drawing"))
-    }
-
-    @Test
     fun `every block type round-trips through its wire value`() {
         for (type in BlockType.entries) {
             assertEquals(type, BlockType.fromWire(type.wire))
