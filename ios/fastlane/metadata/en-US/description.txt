@@ -1,0 +1,22 @@
+MyNote is a block editor for people who would rather not hand their notes to somebody else's server.
+
+There is no account to create and nothing to sign in to. Open the app and write.
+
+WRITTEN IN BLOCKS
+Every paragraph, heading, list item and quote is its own block. Press Return to start a new one. Backspace at the very start of a block folds it into the one above, so a stray keystroke never strands your text.
+
+Headings, bulleted and numbered lists, to-dos you can tick off, quotes, code and dividers — all reachable from a bar that sits above the keyboard, so you are never hunting through menus mid-sentence.
+
+WORKS WITHOUT A CONNECTION
+Everything is saved on your device the moment you type it. There is no spinner, no "saving…", and nothing to wait for. A tunnel, a plane or a dead signal makes no difference.
+
+BACKS UP TO STORAGE YOU ALREADY OWN
+Turn on backup and MyNote writes to your own iCloud Drive — a folder you can open, read and delete yourself. The files are plain JSON. If MyNote disappeared tomorrow, your notes would still be sitting there in a format you can read.
+
+Nothing is sent to us, because there is nowhere to send it. MyNote has no servers.
+
+MAKE IT YOURS
+Three built-in themes, or build your own: colours for light and dark, text size, line height, spacing, corners and page width. Every screen follows it.
+
+ON EVERY SIZE OF SCREEN
+One app for iPhone and iPad. On a large screen the note list and the editor sit side by side; on a phone they take turns. Text stays at a comfortable reading width rather than stretching across a 13-inch display.
