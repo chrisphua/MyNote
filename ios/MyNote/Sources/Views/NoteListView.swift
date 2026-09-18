@@ -55,17 +55,23 @@ struct NoteListView: View {
                     Label("Settings", systemImage: "gearshape")
                 }
             }
-            ToolbarItem(placement: .status) {
-                SyncStatusView()
-            }
         }
-        .overlay(alignment: .bottom) {
+        .overlay(alignment: .center) {
             if filtered.isEmpty {
                 Text(searchText.isEmpty ? "No notes yet." : "Nothing matches “\(searchText)”.")
                     .font(theme.current.font(.caption))
                     .foregroundStyle(theme.current.textSecondary)
-                    .padding(.bottom, 40)
             }
+        }
+        .safeAreaInset(edge: .bottom) {
+            // Only appears when it has something worth saying. In the ordinary
+            // case — notes saved, nothing pending — silence is the right answer,
+            // and a permanent "Saved on this device" chip is just furniture.
+            //
+            // The padding and background live inside the view, so when it has
+            // nothing to report the inset collapses to nothing rather than
+            // leaving an empty strip.
+            SyncStatusView(style: .banner)
         }
     }
 
@@ -106,47 +112,97 @@ private struct NoteRow: View {
     }
 }
 
-/// Small, always-visible truth about whether edits have left the device.
+/// Whether edits have left the device.
+///
+/// Two modes. In the note list it stays silent unless something needs
+/// attention; in Settings it always reports, because that is where someone goes
+/// to check deliberately.
 struct SyncStatusView: View {
+    enum Style {
+        /// Always reports, with no chrome. For Settings.
+        case inline
+        /// Silent unless something needs attention; carries its own padding and
+        /// background so it collapses to nothing when quiet.
+        case banner
+    }
+
+    var style: Style = .inline
+
     @Environment(AppEnvironment.self) private var app
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        let coordinator = app.syncCoordinator
-        HStack(spacing: 6) {
-            switch coordinator.status {
-            case .localOnly:
-                Image(systemName: "iphone")
-                Text("Saved on this device")
-            case .syncing:
-                ProgressView().controlSize(.mini)
-                Text("Backing up…")
-            case .offline:
-                Image(systemName: "wifi.slash")
-                Text(coordinator.hasPendingChanges ? "Offline — changes waiting" : "Offline")
-            case .needsSignIn:
-                Image(systemName: "person.crop.circle.badge.exclamationmark")
-                Text("Reconnect \(coordinator.provider.title)")
-            case .storageFull:
-                Image(systemName: "externaldrive.badge.exclamationmark")
-                Text("\(coordinator.provider.title) is full")
-            case .error(let message):
-                Image(systemName: "exclamationmark.triangle")
-                Text(message)
-            case .idle:
-                if coordinator.hasPendingChanges {
-                    Image(systemName: "arrow.triangle.2.circlepath")
-                    Text("Changes waiting")
-                } else if let at = coordinator.lastSyncedAt {
-                    Image(systemName: "checkmark.icloud")
-                    Text("Backed up \(at, format: .relative(presentation: .named))")
+        if let state = state {
+            let row = HStack(spacing: 6) {
+                if state.showsSpinner {
+                    ProgressView().controlSize(.mini)
                 } else {
-                    Image(systemName: "externaldrive")
-                    Text("Saved on this device")
+                    Image(systemName: state.symbol)
                 }
+                Text(state.message)
+            }
+            .font(theme.current.font(.caption))
+            .foregroundStyle(state.isProblem ? Color.orange : theme.current.textSecondary)
+
+            switch style {
+            case .inline:
+                row
+            case .banner:
+                row
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.horizontal, theme.current.contentPadding)
+                    .padding(.vertical, 8)
+                    .background(.bar)
             }
         }
-        .font(theme.current.font(.caption))
-        .foregroundStyle(theme.current.textSecondary)
     }
+
+    private struct Status {
+        let message: String
+        let symbol: String
+        var showsSpinner = false
+        var isProblem = false
+        /// True for the steady state, which the list hides and Settings shows.
+        var isQuiet = false
+    }
+
+    private var state: Status? {
+        let coordinator = app.syncCoordinator
+        let status: Status
+
+        switch coordinator.status {
+        case .syncing:
+            status = Status(message: "Backing up…", symbol: "arrow.triangle.2.circlepath",
+                            showsSpinner: true)
+        case .offline:
+            status = coordinator.hasPendingChanges
+                ? Status(message: "Offline — changes waiting", symbol: "wifi.slash")
+                : Status(message: "Offline", symbol: "wifi.slash", isQuiet: true)
+        case .needsSignIn:
+            status = Status(message: "Reconnect \(coordinator.provider.title)",
+                            symbol: "person.crop.circle.badge.exclamationmark", isProblem: true)
+        case .storageFull:
+            status = Status(message: "\(coordinator.provider.title) is full",
+                            symbol: "externaldrive.badge.exclamationmark", isProblem: true)
+        case .error(let message):
+            status = Status(message: message, symbol: "exclamationmark.triangle", isProblem: true)
+        case .localOnly:
+            status = Status(message: "Saved on this device", symbol: "iphone", isQuiet: true)
+        case .idle:
+            if coordinator.hasPendingChanges {
+                status = Status(message: "Changes waiting", symbol: "arrow.triangle.2.circlepath")
+            } else if let at = coordinator.lastSyncedAt {
+                status = Status(message: "Backed up \(at.formatted(.relative(presentation: .named)))",
+                                symbol: "checkmark.icloud", isQuiet: true)
+            } else {
+                status = Status(message: "Saved on this device", symbol: "externaldrive", isQuiet: true)
+            }
+        }
+
+        return (style == .banner && status.isQuiet) ? nil : status
+    }
+}
+
+func relativeTime(_ date: Date) -> String {
+    date.formatted(.relative(presentation: .named))
 }
