@@ -15,6 +15,7 @@ import com.android.billingclient.api.QueryPurchasesParams
 import com.android.billingclient.api.acknowledgePurchase
 import com.android.billingclient.api.queryProductDetails
 import com.android.billingclient.api.queryPurchasesAsync
+import io.mynote.app.AppFeatures
 import io.mynote.core.License
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +52,9 @@ class BillingManager(
     private val _sawRemoteLicense = MutableStateFlow(false)
     val sawRemoteLicense: StateFlow<Boolean> = _sawRemoteLicense.asStateFlow()
 
-    val isPro: Boolean get() = PRO_ENTITLEMENT in _entitlements.value
+    /** While nothing is for sale, everyone has everything. */
+    val isPro: Boolean
+        get() = !AppFeatures.PAID_FEATURES_ENABLED || PRO_ENTITLEMENT in _entitlements.value
 
     private val client: BillingClient = BillingClient.newBuilder(context)
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())
@@ -67,6 +70,10 @@ class BillingManager(
         .build()
 
     fun connect() {
+        // Nothing is for sale, so there is nothing to connect to. Skipping this
+        // also keeps the app off Play Billing at launch entirely.
+        if (!AppFeatures.PAID_FEATURES_ENABLED) return
+
         client.startConnection(object : BillingClientStateListener {
             override fun onBillingSetupFinished(result: BillingResult) {
                 if (result.responseCode == BillingClient.BillingResponseCode.OK) {
@@ -86,6 +93,7 @@ class BillingManager(
     }
 
     suspend fun loadProduct() {
+        if (!AppFeatures.PAID_FEATURES_ENABLED) return
         val params = QueryProductDetailsParams.newBuilder()
             .setProductList(
                 listOf(
@@ -117,6 +125,7 @@ class BillingManager(
 
     /** Re-read what this Google account owns. Required for a Restore control. */
     suspend fun refreshLocalEntitlements() {
+        if (!AppFeatures.PAID_FEATURES_ENABLED) return
         val params = QueryPurchasesParams.newBuilder()
             .setProductType(BillingClient.ProductType.INAPP)
             .build()
@@ -133,7 +142,7 @@ class BillingManager(
      * Neither may revoke the other.
      */
     fun applyRemoteLicense(license: License?) {
-        if (license == null) return
+        if (!AppFeatures.PAID_FEATURES_ENABLED || license == null) return
         _entitlements.value = License.combine(_entitlements.value, license)
         _sawRemoteLicense.value = true
     }

@@ -95,13 +95,14 @@ ordering-key invariant.
 
 ## Money
 
-**MyNote Pro — $14.99, once.** Unlocks custom themes and cloud backup.
-Everything else is free forever: unlimited notes, every block type, three
-themes, search.
+**Everything is free right now.** No paywall, no in-app purchase, no account.
+Custom themes and cloud backup are unlocked for everyone while the app settles.
 
-With no servers there is no recurring cost, so there is no honest case for a
-recurring charge. Running MyNote costs **$114/year** in developer fees, and
-roughly **nine sales a year** covers it. Full model in [docs/COSTS.md](docs/COSTS.md).
+A one-time purchase is planned once it is stable and published — the code is
+written and switched off behind `AppFeatures.paidFeaturesEnabled`. Running
+MyNote costs **$114/year** in developer fees and nothing per user, so there is
+no hurry. See [docs/MONETIZATION.md](docs/MONETIZATION.md) and
+[docs/COSTS.md](docs/COSTS.md).
 
 ## Docs
 

@@ -49,6 +49,15 @@ already owns, and nothing of theirs touches hardware we control.
   with them.
 - Sign-in. There is no account to create.
 
+### Changed
+
+- **Everything is free.** The paywall is switched off behind
+  `AppFeatures.paidFeaturesEnabled`, so custom themes and cloud backup are
+  unlocked for everyone, no purchase UI is shown, and neither StoreKit nor Play
+  Billing is contacted at launch. Selling waits until the app is stable and
+  published. The purchasing code is kept, not deleted — it works and is tested,
+  and re-enabling it is one constant.
+
 ### Fixed
 
 - **The app crashed on launch on a real device.** SwiftData defaults

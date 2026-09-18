@@ -16,7 +16,7 @@ struct SettingsView: View {
             Form {
                 backupSection
                 appearanceSection
-                purchaseSection
+                if AppFeatures.paidFeaturesEnabled { purchaseSection }
                 aboutSection
             }
             .scrollContentBackground(.hidden)
@@ -95,13 +95,6 @@ struct SettingsView: View {
 
     private func select(_ option: StorageProvider) {
         guard option != app.syncCoordinator.provider else { return }
-
-        // Uploading is the paid part; reading is free so a purchase made on the
-        // other platform can be found.
-        if option != .none && !app.purchases.isPro {
-            showingPaywall = true
-            return
-        }
 
         if app.syncCoordinator.provider != .none {
             pendingProvider = option      // switching wipes; confirm first

@@ -24,7 +24,11 @@ final class PurchaseManager {
     /// how a purchase made on Android reaches an iPhone.
     private(set) var sawRemoteLicense = false
 
-    var isPro: Bool { entitlements.contains(Self.proEntitlement) }
+    /// While nothing is for sale, everyone has everything.
+    var isPro: Bool {
+        guard AppFeatures.paidFeaturesEnabled else { return true }
+        return entitlements.contains(Self.proEntitlement)
+    }
 
     /// Called after a purchase so the licence can be written to the user's
     /// folder for their other devices.
@@ -37,6 +41,10 @@ final class PurchaseManager {
     private let updates = TaskBox()
 
     init() {
+        // Nothing is for sale, so there is nothing to listen for. Skipping this
+        // also keeps the app from touching StoreKit at launch at all.
+        guard AppFeatures.paidFeaturesEnabled else { return }
+
         // A transaction can arrive at any time — an Ask to Buy approval, a
         // purchase made on another device, a restore — so we listen for life.
         updates.task = Task { [weak self] in
@@ -51,6 +59,7 @@ final class PurchaseManager {
     }
 
     func loadProducts() async {
+        guard AppFeatures.paidFeaturesEnabled else { return }
         do {
             product = try await Product.products(for: [Self.proProductId]).first
             loadFailed = product == nil
@@ -105,6 +114,7 @@ final class PurchaseManager {
 
     /// What StoreKit believes this device owns, independent of any folder.
     func refreshLocalEntitlements() async {
+        guard AppFeatures.paidFeaturesEnabled else { return }
         for await result in Transaction.currentEntitlements {
             guard case .verified(let transaction) = result else { continue }
             await adopt(transaction, announce: false)
@@ -117,7 +127,7 @@ final class PurchaseManager {
     /// Android exists only in the file, and one made here may not be uploaded
     /// yet. Neither may revoke the other.
     func applyRemoteLicense(_ license: License?) {
-        guard let license else { return }
+        guard AppFeatures.paidFeaturesEnabled, let license else { return }
         entitlements = License.combine(local: entitlements, remote: license)
         sawRemoteLicense = true
     }

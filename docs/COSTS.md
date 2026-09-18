@@ -39,6 +39,11 @@ neither store lets you sell anything until banking and tax details clear. See
 — create both accounts before the app is finished, so those clocks run while you
 are still building.
 
+> **Revenue today is zero by choice.** The app is free while it settles; see
+> [MONETIZATION.md](MONETIZATION.md). The figures below are what the planned
+> one-time purchase would yield once it is switched on. Until then the $114/year
+> is simply a cost of shipping.
+
 ## Store commission
 
 Both stores take **15%** for a small developer — Apple through the Small

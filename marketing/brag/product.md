@@ -55,8 +55,11 @@ These are the checkable claims. Use these.
 
 ## Pricing, stated plainly
 
-- Free: unlimited notes, all block types, three themes, search.
-- **MyNote Pro: $14.99, once.** Custom themes and cloud backup. No subscription.
+- **Free. All of it.** Unlimited notes, every block type, custom themes, cloud
+  backup, search. No account, no subscription, no in-app purchase.
+- A one-time purchase is planned for later. **Do not mention a price in any
+  copy** until it actually exists — announcing a price the app does not charge
+  is the fastest way to lose the trust this product is built on.
 
 ## Who it is for
 

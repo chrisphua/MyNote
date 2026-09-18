@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import io.mynote.app.AppContainer
+import io.mynote.app.AppFeatures
 import io.mynote.app.sync.StorageProvider
 import io.mynote.app.theme.Appearance
 import io.mynote.app.theme.LocalMyNoteColors
@@ -109,12 +110,6 @@ fun SettingsScreen(
 
     fun choose(target: StorageProvider) {
         if (target == provider) return
-        // Uploading is the paid part; reading is free so a purchase made on the
-        // other platform can be found.
-        if (target != StorageProvider.NONE && !isPro) {
-            onOpenPaywall()
-            return
-        }
         if (provider != StorageProvider.NONE) {
             pendingSwitch = target       // switching wipes; confirm first
         } else {
@@ -264,20 +259,22 @@ fun SettingsScreen(
                 item { Caption("The three built-in themes are free. Building your own is part of Pro.") }
             }
 
-            item { HorizontalDivider(color = colors.border) }
-            item { SectionHeader("MyNote Pro") }
-            item {
-                Column {
-                    Text("Status: ${if (isPro) "Unlocked" else "Not purchased"}",
-                         color = colors.textPrimary)
-                    if (!isPro) {
-                        TextButton(onClick = onOpenPaywall) { Text("See what's included") }
-                    }
-                    TextButton(onClick = {
-                        scope.launch { container.billing.refreshLocalEntitlements() }
-                    }) { Text("Restore purchase") }
-                    if (sawRemote) {
-                        Caption("Unlocked from a purchase found in your backup.")
+            if (AppFeatures.PAID_FEATURES_ENABLED) {
+                item { HorizontalDivider(color = colors.border) }
+                item { SectionHeader("MyNote Pro") }
+                item {
+                    Column {
+                        Text("Status: ${if (isPro) "Unlocked" else "Not purchased"}",
+                             color = colors.textPrimary)
+                        if (!isPro) {
+                            TextButton(onClick = onOpenPaywall) { Text("See what's included") }
+                        }
+                        TextButton(onClick = {
+                            scope.launch { container.billing.refreshLocalEntitlements() }
+                        }) { Text("Restore purchase") }
+                        if (sawRemote) {
+                            Caption("Unlocked from a purchase found in your backup.")
+                        }
                     }
                 }
             }

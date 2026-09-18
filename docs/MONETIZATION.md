@@ -91,6 +91,20 @@ Both stores reject on these, and all are handled:
   created. Requesting `drive` or `drive.readonly` would trigger a restricted
   scope security assessment.
 
+## Turning it on
+
+1. Flip `paidFeaturesEnabled` / `PAID_FEATURES_ENABLED` to `true`.
+2. Create the product in both stores, and complete the paid-apps agreement plus
+   banking and tax details — see [DEPLOYMENT.md](DEPLOYMENT.md).
+3. **Decide what happens to people who already installed it free.** They will
+   see a paywall appear over features they already had, which reads as a
+   takeaway however it is worded. The usual answer is to grandfather them: write
+   a marker at first launch and treat anyone carrying it as Pro. That marker has
+   to exist *before* those users arrive, so this is a decision to make early —
+   not on the day the switch is flipped.
+4. Re-read this document; the verification and refund behaviour below is already
+   implemented and unchanged.
+
 ## Adding a product later
 
 The licence file already carries an `entitlements` **list**, so splitting Pro
