@@ -82,7 +82,17 @@ struct NoteEditorView: View {
         .scrollDismissesKeyboard(.interactively)
         .navigationTitle(note?.title.isEmpty == false ? note!.title : "Untitled")
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar { editorToolbar }
+        .safeAreaInset(edge: .bottom) {
+            // Only while something is being edited. A formatting bar with
+            // nothing to format is just a strip of chrome.
+            if let id = focusedBlock, let block = ordered.first(where: { $0.id == id }) {
+                BlockFormatBar(
+                    current: BlockType(rawValue: block.type) ?? .paragraph,
+                    onSelect: { type in Task { await changeType(block, to: type) } },
+                    onDone: { focusedBlock = nil }
+                )
+            }
+        }
     }
 
     /// Phones get tighter margins; regular-width devices can afford the theme's.
@@ -108,31 +118,6 @@ struct NoteEditorView: View {
         .foregroundStyle(theme.current.textPrimary)
         .textFieldStyle(.plain)
         .padding(.bottom, 8)
-    }
-
-    @ToolbarContentBuilder
-    private var editorToolbar: some ToolbarContent {
-        ToolbarItemGroup(placement: .keyboard) {
-            // Block-type shortcuts sit on the keyboard bar, so changing a line
-            // to a heading never requires leaving the keyboard.
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(BlockType.allCases, id: \.self) { type in
-                        Button {
-                            guard let id = focusedBlock,
-                                  let block = blocks.first(where: { $0.id == id }) else { return }
-                            Task { await changeType(block, to: type) }
-                        } label: {
-                            Label(type.label, systemImage: type.symbol)
-                                .labelStyle(.iconOnly)
-                        }
-                        .accessibilityLabel(type.label)
-                    }
-                }
-            }
-            Spacer()
-            Button("Done") { focusedBlock = nil }
-        }
     }
 
     // MARK: - Editing

@@ -106,6 +106,41 @@ struct EditorOperationsTests {
         #expect(joinOffset == 3, "the caret belongs where the two met")
     }
 
+    @Test("a fresh install is seeded with the welcome note")
+    func seedsWelcomeNote() async throws {
+        let (store, repository, context) = try makeFixture()
+        UserDefaults.standard.removeObject(forKey: "welcome.seeded")
+
+        let noteId = try #require(await repository.seedWelcomeNoteIfNeeded(existingNoteCount: 0))
+        let seeded = try blocks(in: context, noteId: noteId)
+
+        #expect(seeded.count == WelcomeNote.lines.count,
+                "every line should land, with none left over from createNote")
+        #expect(BlockContent.decode(seeded[0].content).text == WelcomeNote.lines[0].text)
+        #expect(seeded[0].type == WelcomeNote.lines[0].type.rawValue)
+        #expect(try await store.noteCount() == 1)
+    }
+
+    @Test("the welcome note is not seeded over notes that already exist")
+    func doesNotSeedOverExistingNotes() async throws {
+        let (_, repository, _) = try makeFixture()
+        UserDefaults.standard.removeObject(forKey: "welcome.seeded")
+
+        // Someone reinstalling with notes already in their Drive should not
+        // find a sample note sitting on top of their own writing.
+        #expect(await repository.seedWelcomeNoteIfNeeded(existingNoteCount: 3) == nil)
+    }
+
+    @Test("the welcome note is seeded only once")
+    func seedsOnlyOnce() async throws {
+        let (_, repository, _) = try makeFixture()
+        UserDefaults.standard.removeObject(forKey: "welcome.seeded")
+
+        #expect(await repository.seedWelcomeNoteIfNeeded(existingNoteCount: 0) != nil)
+        #expect(await repository.seedWelcomeNoteIfNeeded(existingNoteCount: 0) == nil,
+                "deleting it must not bring it back")
+    }
+
     @Test("a list carries on when split; a heading does not")
     func splitKeepsListTypes() async throws {
         let (_, repository, context) = try makeFixture()

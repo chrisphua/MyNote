@@ -99,6 +99,15 @@ final class AppEnvironment {
         applyEntitlements()
 
         loadSyncedThemes()
+
+        // After the folder has been read, so a restored backup wins over the
+        // welcome note rather than being buried under it.
+        if !ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+            let existing = (try? await store.noteCount()) ?? 0
+            await NoteRepository(store: store, coordinator: syncCoordinator)
+                .seedWelcomeNoteIfNeeded(existingNoteCount: existing)
+        }
+
         await syncCoordinator.refreshPending()
     }
 

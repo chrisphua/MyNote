@@ -131,6 +131,30 @@ final class EditorKeyboardTests: XCTestCase {
         XCTAssertEqual(field.value as? String, "only bloc", "backspace should still delete a character")
     }
 
+    func testFormattingBarAppearsWhileEditing() {
+        // It disappeared once already: `ToolbarItemGroup(placement: .keyboard)`
+        // attaches to SwiftUI's own focused input, and the editor's field is a
+        // UITextView that SwiftUI does not know about.
+        let field = newNote()
+        field.typeText("a line")
+
+        XCTAssertTrue(app.buttons["Bulleted list"].exists, "the formatting bar should be up while editing")
+        XCTAssertTrue(app.buttons["Heading 1"].exists)
+        XCTAssertTrue(app.buttons["To-do"].exists)
+    }
+
+    func testFormattingBarChangesTheBlockType() {
+        let field = newNote()
+        field.typeText("shopping")
+
+        app.buttons["Bulleted list"].tap()
+
+        // The bullet marker is drawn beside the field, so the text is untouched
+        // and the block is still the one being edited.
+        XCTAssertEqual(blockValues, ["shopping"])
+        XCTAssertTrue(app.buttons["Bulleted list"].exists)
+    }
+
     func testTypingIsNotClobberedByItsOwnSave() {
         // The placeholder used to reappear mid-sentence: an asynchronous write
         // echoed back a stale value and overwrote the field.

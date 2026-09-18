@@ -114,6 +114,48 @@ struct NoteRepository {
                            hlc: await coordinator.engine.stamp(), deleted: true))
     }
 
+    /// Create the welcome note, once, on a fresh install.
+    ///
+    /// Guarded on the database being empty rather than on a flag alone: someone
+    /// restoring a backup, or reinstalling with notes already in their Drive,
+    /// should not find this sitting on top of their own writing.
+    @discardableResult
+    func seedWelcomeNoteIfNeeded(existingNoteCount: Int) async -> String? {
+        let key = "welcome.seeded"
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: key), existingNoteCount == 0 else { return nil }
+        defaults.set(true, forKey: key)
+
+        let noteId = await createNote(title: WelcomeNote.title)
+
+        // `createNote` leaves one empty block for the cursor; the first line
+        // takes it over rather than sitting under a blank.
+        let firstBlockId = (try? await store.blockIds(inNote: noteId))?.first
+        var previousKey: String? = nil
+
+        for (index, line) in WelcomeNote.lines.enumerated() {
+            if index == 0, let firstBlockId {
+                let block = Block(id: firstBlockId, noteId: noteId,
+                                  orderKey: FractionalIndex.between(nil, nil),
+                                  type: line.type,
+                                  content: BlockContent(text: line.text),
+                                  hlc: await coordinator.engine.stamp())
+                await write(block.asChange())
+                previousKey = block.orderKey
+                continue
+            }
+
+            let block = Block(noteId: noteId,
+                              orderKey: FractionalIndex.between(previousKey, nil),
+                              type: line.type,
+                              content: BlockContent(text: line.text),
+                              hlc: await coordinator.engine.stamp())
+            await write(block.asChange())
+            previousKey = block.orderKey
+        }
+        return noteId
+    }
+
     // MARK: - Themes
 
     func saveTheme(_ spec: ThemeSpec) async {

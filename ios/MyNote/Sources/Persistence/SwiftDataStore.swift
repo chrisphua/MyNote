@@ -140,6 +140,12 @@ actor SwiftDataStore: LocalStore {
             .compactMap { ThemeSpec.decode($0.spec)?.sanitized() }
     }
 
+    func noteCount() throws -> Int {
+        try modelContext.fetchCount(
+            FetchDescriptor<NoteEntity>(predicate: #Predicate { !$0.deleted })
+        )
+    }
+
     func blockIds(inNote noteId: String) throws -> [String] {
         try modelContext
             .fetch(FetchDescriptor<BlockEntity>(
