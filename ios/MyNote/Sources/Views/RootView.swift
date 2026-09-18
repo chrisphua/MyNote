@@ -13,7 +13,14 @@ struct RootView: View {
     @Environment(ThemeManager.self) private var theme
 
     @State private var selectedNoteId: String?
-    @State private var columnVisibility: NavigationSplitViewVisibility = .automatic
+    /// `.all`, not `.automatic`.
+    ///
+    /// On an iPad in portrait `.automatic` hides the sidebar, so a fresh install
+    /// opens on an empty detail pane reading "Pick a note, or start a new one."
+    /// with no list in sight and only a small toggle to find it. Apple's own
+    /// Notes shows both columns there, and so should this. A compact width still
+    /// collapses to a stack, so this changes nothing on a phone.
+    @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showingSettings = false
 
     var body: some View {
@@ -30,6 +37,10 @@ struct RootView: View {
                 EmptyStateView()
             }
         }
+        // `.balanced`, so the sidebar takes its own space instead of sliding
+        // over the editor and dimming it. With the default style, showing the
+        // list on an iPad in portrait covers the note you are reading.
+        .navigationSplitViewStyle(.balanced)
         .background(theme.current.background)
         .sheet(isPresented: $showingSettings) {
             SettingsView()

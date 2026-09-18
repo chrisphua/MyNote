@@ -24,6 +24,10 @@ version number so a bug report maps to one commit.
   block's type never changed. Changing a type now also hands the caret back,
   rather than ending the sentence.
 - **Android: a fresh install opens with the welcome note**, as on iOS.
+- **iPad: the note list is visible on launch.** In portrait the split view hid
+  it, so a fresh install opened on an empty pane reading "Pick a note, or start
+  a new one" with no list in sight. Showing the list also no longer slides it
+  over the note you are reading.
 - **Both: backspacing or deleting a block next to a divider no longer loses the
   text.** It folds into the nearest block that can actually hold text, rather
   than into the divider, where it would have been unreachable but still backed
