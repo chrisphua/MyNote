@@ -21,7 +21,7 @@ import java.util.UUID
  * A DI framework would earn its keep in a larger app; here it would add build
  * time and indirection for six objects that are all created once at launch.
  */
-class AppContainer(context: Context) {
+class AppContainer(private val context: Context) {
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
 
     val database = MyNoteDatabase.get(context)
@@ -56,8 +56,29 @@ class AppContainer(context: Context) {
             billing.applyRemoteLicense(syncCoordinator.readLicense())
             applyEntitlements()
             loadSyncedThemes()
+            seedWelcomeNoteIfNeeded(context)
             syncCoordinator.refreshPending()
         }
+    }
+
+    /**
+     * Greet a fresh install, once.
+     *
+     * Guarded on the database being empty as well as on the flag: someone
+     * reinstalling with notes already in their Drive should not find a sample
+     * note sitting on top of their own writing. Runs after the folder has been
+     * read, so a restored backup wins.
+     */
+    private suspend fun seedWelcomeNoteIfNeeded(context: Context) {
+        val prefs = context.getSharedPreferences("mynote.sync", Context.MODE_PRIVATE)
+        if (prefs.getBoolean(WELCOME_SEEDED, false)) return
+        if (database.notes().count() > 0) return
+
+        // The flag is set after the note exists, not before. Setting it first
+        // meant a throw or a process death in between left the flag claiming a
+        // note that was never written.
+        repository.seedWelcomeNote()
+        prefs.edit { putBoolean(WELCOME_SEEDED, true) }
     }
 
     /** Keep the theme gate and the upload gate in step with what the user owns. */
@@ -87,5 +108,9 @@ class AppContainer(context: Context) {
             ?: UUID.randomUUID().toString().take(8).also {
                 prefs.edit { putString("deviceId", it) }
             }
+    }
+
+    private companion object {
+        const val WELCOME_SEEDED = "welcomeSeeded"
     }
 }

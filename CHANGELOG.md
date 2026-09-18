@@ -4,6 +4,32 @@ Notable changes to MyNote. Format follows [Keep a Changelog](https://keepachange
 versions follow [SemVer](https://semver.org/). iOS and Android ship from the same
 version number so a bug report maps to one commit.
 
+## [Unreleased]
+
+### Fixed
+
+- **Android: the formatting bar was unreachable.** It sits at the bottom of the
+  screen, and the window draws edge to edge — so the keyboard covered it. The
+  controls were there the whole time, under the keys. The editor now holds
+  itself above the keyboard.
+- **Android: Return starts a new block** instead of putting a line break inside
+  the current one, and typing carries on in the new block rather than the old.
+- **Android: Backspace at the very start of a block** folds it into the one
+  above, with the caret left where the two texts join — so the keystroke can be
+  undone by typing. Backspacing out of the first block turns a heading, list or
+  quote back into plain text.
+- **Android: the formatting bar stays put while it is being used.** Pressing one
+  of its buttons takes focus off the text, which used to take the bar off screen
+  between the press and the release — so the press never became a click and the
+  block's type never changed. Changing a type now also hands the caret back,
+  rather than ending the sentence.
+- **Android: a fresh install opens with the welcome note**, as on iOS.
+- **Both: backspacing or deleting a block next to a divider no longer loses the
+  text.** It folds into the nearest block that can actually hold text, rather
+  than into the divider, where it would have been unreachable but still backed
+  up. On Android the same mistake crashed the app outright — on the welcome note
+  every new install is given.
+
 ## [0.2.0] — Serverless
 
 **MyNote no longer has a backend.** Notes are backed up into storage the user

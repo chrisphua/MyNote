@@ -8,6 +8,7 @@ import io.mynote.core.Change
 import io.mynote.core.Entity
 import io.mynote.core.FractionalIndex
 import io.mynote.core.Note
+import io.mynote.core.WelcomeNote
 import io.mynote.core.ThemeSpec
 import io.mynote.core.asChange
 import kotlinx.serialization.json.JsonPrimitive
@@ -114,8 +115,68 @@ class NoteRepository(
         return joinOffset
     }
 
+    /**
+     * Create the welcome note. The caller decides whether it is wanted; this
+     * only knows how to write it.
+     */
+    suspend fun seedWelcomeNote(): String {
+        val noteId = createNote(title = WelcomeNote.TITLE)
+
+        // createNote leaves one empty block for the cursor; the first line takes
+        // it over rather than sitting under a blank.
+        val firstBlockId = db.blocks().idsForNote(noteId).firstOrNull()
+        var previousKey: String? = null
+
+        WelcomeNote.lines.forEachIndexed { index, line ->
+            val orderKey = FractionalIndex.between(previousKey, null)
+            val block = Block(
+                id = if (index == 0 && firstBlockId != null) firstBlockId else UUID.randomUUID().toString(),
+                noteId = noteId,
+                orderKey = orderKey,
+                type = line.type,
+                content = BlockContent(text = line.text),
+                hlc = coordinator.engine.stamp(),
+            )
+            write(block.asChange())
+            previousKey = orderKey
+        }
+        return noteId
+    }
+
     suspend fun update(block: Block) {
         write(block.copy(hlc = coordinator.engine.stamp()).asChange())
+    }
+
+    /**
+     * Change one block's type, leaving its text alone.
+     *
+     * The row is re-read here rather than taken from the caller. A caller holds
+     * a snapshot from the last time the screen composed, and a block is written
+     * whole — so when the formatting bar is tapped a keystroke's write may still
+     * be in flight, and a whole-row write built on that snapshot puts the older
+     * text back under a newer clock. The character is then gone locally and in
+     * the backup. Launches on the same dispatcher run in order, so by the time
+     * this reads, the keystroke has landed.
+     */
+    suspend fun setBlockType(blockId: String, type: BlockType) {
+        val current = blockById(blockId) ?: return
+        update(current.copy(type = type))
+    }
+
+    /** The stored row as the domain type, read fresh. */
+    suspend fun blockById(blockId: String): Block? {
+        val row = db.blocks().byId(blockId) ?: return null
+        val blockType = BlockType.fromWire(row.type) ?: return null
+        return Block(
+            id = row.id,
+            noteId = row.noteId,
+            parentId = row.parentId,
+            orderKey = row.orderKey,
+            type = blockType,
+            content = BlockContent.decode(row.content),
+            hlc = row.hlc,
+            deleted = row.deleted,
+        )
     }
 
     suspend fun deleteBlock(blockId: String) {

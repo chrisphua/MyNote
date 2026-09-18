@@ -12,6 +12,9 @@ interface NoteDao {
     @Query("SELECT * FROM notes WHERE deleted = 0 ORDER BY orderKey")
     fun observeAll(): Flow<List<NoteRow>>
 
+    @Query("SELECT COUNT(*) FROM notes WHERE deleted = 0")
+    suspend fun count(): Int
+
     @Query("SELECT * FROM notes WHERE id = :id LIMIT 1")
     suspend fun byId(id: String): NoteRow?
 

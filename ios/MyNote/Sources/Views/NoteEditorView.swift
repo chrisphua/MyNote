@@ -139,9 +139,19 @@ struct NoteEditorView: View {
         caret = CaretRequest(blockId: id, offset: 0)
     }
 
+    /// The nearest block above that actually renders a text field.
+    ///
+    /// A divider holds no text, so folding a block into one would put the words
+    /// somewhere the writer can never reach them again — and they would still
+    /// sync to the backup like that. Android crashed outright on the same
+    /// mistake; here it fails quietly, which is worse.
+    private func textBlock(above block: BlockEntity) -> BlockEntity? {
+        ordered.last { $0.orderKey < block.orderKey && $0.type != BlockType.divider.rawValue }
+    }
+
     /// Backspace at the start: fold this block into the one above it.
     private func mergeBackwards(from block: BlockEntity) async {
-        guard let previous = ordered.last(where: { $0.orderKey < block.orderKey }) else {
+        guard let previous = textBlock(above: block) else {
             // Already the first block. Backspacing out of a list or heading turns
             // it back into plain text, which is the usual way out of a style you
             // did not mean to apply.
@@ -160,7 +170,7 @@ struct NoteEditorView: View {
     private func removeBlock(_ block: BlockEntity) async {
         // Never leave a note with zero blocks — there would be nowhere to type.
         guard ordered.count > 1 else { return }
-        let previous = ordered.last { $0.orderKey < block.orderKey }
+        let previous = textBlock(above: block)
         await repository.deleteBlock(block.id)
         focusedBlock = previous?.id
         if let previous { caret = .end(of: previous.id) }
