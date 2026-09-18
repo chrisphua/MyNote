@@ -20,9 +20,7 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
-      # Fast, no simulator: this is where the sync engine is actually verified.
+      # No simulator needed: this is where the sync engine is actually verified.
       - name: Test MyNoteCore
         working-directory: ios/MyNoteCore
         run: swift test
@@ -33,8 +31,6 @@ jobs:
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
 
       - name: Install XcodeGen
         run: brew install xcodegen
@@ -63,12 +59,29 @@ jobs:
             echo "No Google client id; Drive backup will be hidden in this build."
           fi
 
+      # Device destination, not simulator: compiling the asset catalog for a
+      # simulator SDK needs a matching runtime installed, and the runner image's
+      # Xcode and runtimes do not always line up. Nothing here needs to run.
       - name: Build
         working-directory: ios
         run: |
           xcodebuild -project MyNote.xcodeproj -scheme MyNote \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination 'generic/platform=iOS' \
             CODE_SIGNING_ALLOWED=NO build
+
+      # The app's own tests need a booted simulator. The device is chosen from
+      # whatever the runner actually has rather than hard-coded, because the
+      # available models change with the image.
+      - name: Test the app
+        working-directory: ios
+        run: |
+          set -euo pipefail
+          DEVICE=$(xcrun simctl list devices available --json \
+            | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['name'] for rt,ds in d.items() if 'iOS' in rt for x in ds if x.get('isAvailable')))")
+          echo "Testing on $DEVICE"
+          xcodebuild test -project MyNote.xcodeproj -scheme MyNote \
+            -destination "platform=iOS Simulator,name=$DEVICE" \
+            CODE_SIGNING_ALLOWED=NO
 
   testflight:
     name: Upload to TestFlight
@@ -78,8 +91,6 @@ jobs:
     environment: ios-release
     steps:
       - uses: actions/checkout@v4
-      - name: Select Xcode
-        run: sudo xcode-select -s /Applications/Xcode_16.2.app
       - name: Install XcodeGen
         run: brew install xcodegen
       - name: Generate project

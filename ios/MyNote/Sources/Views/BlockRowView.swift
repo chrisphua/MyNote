@@ -158,13 +158,21 @@ struct BlockRowView: View {
 
     private var font: Font { theme.current.font(fontRole) }
 
+    /// Prompt shown in an empty block.
+    ///
+    /// A plain paragraph shows nothing. An empty page that says "Type
+    /// something…" is telling the writer what they already came to do, and it
+    /// sits there on every blank line of a long note.
+    ///
+    /// The others stay because they name a block type that is otherwise
+    /// invisible when empty — an empty heading and an empty quote look alike.
     private var placeholder: String {
         switch type {
         case .heading1, .heading2, .heading3: "Heading"
         case .todo: "To-do"
         case .code: "Code"
         case .quote: "Quote"
-        default: "Type something…"
+        default: ""
         }
     }
 

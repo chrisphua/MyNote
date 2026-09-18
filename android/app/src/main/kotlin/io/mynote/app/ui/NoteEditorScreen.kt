@@ -352,12 +352,22 @@ val BlockType.label: String
         BlockType.IMAGE -> "Image"
     }
 
+/**
+ * Prompt shown in an empty block.
+ *
+ * A plain paragraph shows nothing. An empty page that says "Type something…" is
+ * telling the writer what they already came to do, and it sits there on every
+ * blank line of a long note.
+ *
+ * The others stay because they name a block type that is otherwise invisible
+ * when empty — an empty heading and an empty quote look alike.
+ */
 private fun placeholderFor(type: BlockType): String = when (type) {
     BlockType.HEADING1, BlockType.HEADING2, BlockType.HEADING3 -> "Heading"
     BlockType.TODO_ITEM -> "To-do"
     BlockType.CODE -> "Code"
     BlockType.QUOTE -> "Quote"
-    else -> "Type something…"
+    else -> ""
 }
 
 private fun fontSizeFor(type: BlockType, base: androidx.compose.ui.unit.TextUnit) = when (type) {
