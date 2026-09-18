@@ -13,17 +13,19 @@ import XCTest
 @MainActor
 final class EditorKeyboardTests: XCTestCase {
 
-    private var app: XCUIApplication!
+    private let app = XCUIApplication()
 
-    override func setUp() {
-        continueAfterFailure = false
-        app = XCUIApplication()
-        app.launchArguments += ["-ui-testing"]
-        app.launch()
-    }
-
-    /// Opens a fresh note and returns its first block field, focused.
+    /// Launches the app and opens a fresh note, returning its first block field.
+    ///
+    /// Done here rather than in `setUp()`: that override inherits the
+    /// superclass's nonisolated context, so it cannot touch XCUITest's
+    /// main-actor API however the class itself is annotated. A test method in a
+    /// `@MainActor` class is isolated, so this is.
     private func newNote() -> XCUIElement {
+        continueAfterFailure = false
+        app.launchArguments = ["-ui-testing"]
+        app.launch()
+
         app.buttons["New note"].tap()
 
         let field = app.textViews.matching(identifier: "blockEditor").firstMatch
