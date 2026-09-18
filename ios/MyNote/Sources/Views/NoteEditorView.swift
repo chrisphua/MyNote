@@ -42,13 +42,12 @@ struct NoteEditorView: View {
                 ForEach(blocks) { block in
                     BlockRowView(
                         block: block,
-                        isFocused: focusedBlock == block.id,
+                        focusedBlock: $focusedBlock,
                         onCommit: { updated in Task { await repository.update(block: updated) } },
                         onSplit: { await splitBlock(after: block) },
                         onDelete: { await removeBlock(block) },
                         onChangeType: { type in await changeType(block, to: type) }
                     )
-                    .focused($focusedBlock, equals: block.id)
                 }
 
                 // Tapping the empty space below the last block starts a new one,

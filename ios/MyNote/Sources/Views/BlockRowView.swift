@@ -7,7 +7,11 @@ import MyNoteCore
 /// that is what makes "fully customisable" true rather than approximate.
 struct BlockRowView: View {
     let block: BlockEntity
-    let isFocused: Bool
+    /// Bound through from the editor so `.focused` can sit on the text field
+    /// itself. Putting it on this row instead silently does nothing — the
+    /// modifier only binds on a focusable control — which left the editor
+    /// unable to tell whether the user was typing.
+    @FocusState.Binding var focusedBlock: String?
     let onCommit: (Block) -> Void
     let onSplit: () async -> Void
     let onDelete: () async -> Void
@@ -16,6 +20,11 @@ struct BlockRowView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var text: String = ""
     @State private var didLoad = false
+    /// Distinguishes the store echoing our own keystrokes from a genuine edit
+    /// arriving from another device. See `EditorEcho`.
+    @State private var echo = EditorEcho()
+
+    private var isFocused: Bool { focusedBlock == block.id }
 
     private var type: BlockType { BlockType(rawValue: block.type) ?? .paragraph }
     private var content: BlockContent { BlockContent.decode(block.content) }
@@ -37,10 +46,19 @@ struct BlockRowView: View {
             didLoad = true
         }
         .onChange(of: block.content) { _, newValue in
-            // A remote edit arrived for the block being viewed. Adopt it unless
-            // the user is typing in it right now, which would yank the cursor.
             let incoming = BlockContent.decode(newValue).text
-            if !isFocused && incoming != text { text = incoming }
+
+            // Never fight the person typing.
+            guard !isFocused else { return }
+
+            // Our own writes come back through the store asynchronously, and can
+            // arrive out of order. Adopting one would overwrite what is on
+            // screen with a stale value — including the block's original empty
+            // string, which empties the field and shows the placeholder again.
+            guard echo.shouldAdopt(incoming) else { return }
+            guard incoming != text else { return }
+
+            text = incoming
         }
     }
 
@@ -48,6 +66,7 @@ struct BlockRowView: View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             marker
             TextField(placeholder, text: $text, axis: .vertical)
+                .focused($focusedBlock, equals: block.id)
                 .font(font)
                 .foregroundStyle(type == .quote ? theme.current.textSecondary : theme.current.textPrimary)
                 .lineSpacing(theme.current.lineSpacing)
@@ -144,6 +163,9 @@ struct BlockRowView: View {
         var updated = override ?? domain.content
         updated.text = newText
         domain.content = updated
+        // Recorded before the write goes out, so the echo is recognised whenever
+        // it comes back.
+        echo.sending(newText)
         onCommit(domain)
     }
 }

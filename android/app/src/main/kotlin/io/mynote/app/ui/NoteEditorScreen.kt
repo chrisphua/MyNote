@@ -34,6 +34,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -54,6 +56,7 @@ import io.mynote.app.theme.LocalMyNoteMetrics
 import io.mynote.core.Block
 import io.mynote.core.BlockContent
 import io.mynote.core.BlockType
+import io.mynote.core.EditorEcho
 import kotlinx.coroutines.launch
 
 /**
@@ -215,8 +218,27 @@ private fun BlockEditor(
     val content = remember(row.content) { BlockContent.decode(row.content) }
     var text by remember(row.id) { mutableStateOf(content.text) }
     var menuOpen by remember { mutableStateOf(false) }
+    var isFocused by remember(row.id) { mutableStateOf(false) }
+
+    // Distinguishes the store echoing our own keystrokes from a genuine edit
+    // arriving from another device. Without it this screen had the opposite
+    // problem to iOS: it never adopted a remote edit at all, so a change made
+    // elsewhere stayed invisible until the note was reopened. See EditorEcho.
+    val echo = remember(row.id) { EditorEcho() }
+
+    LaunchedEffect(row.content) {
+        val incoming = BlockContent.decode(row.content).text
+        // Never fight the person typing, and never adopt our own write coming
+        // back — it can arrive out of order and would clobber the field.
+        if (!isFocused && echo.shouldAdopt(incoming) && incoming != text) {
+            text = incoming
+        }
+    }
 
     fun emit(newText: String = text, newContent: BlockContent = content, newType: BlockType = type) {
+        // Recorded before the write goes out, so the echo is recognised whenever
+        // it comes back.
+        echo.sending(newText)
         onChange(
             Block(
                 id = row.id,
@@ -288,7 +310,9 @@ private fun BlockEditor(
                     lineHeight = metrics.lineHeight,
                 ),
                 cursorBrush = SolidColor(colors.accent),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .onFocusChanged { isFocused = it.isFocused },
             )
         }
 
