@@ -6,6 +6,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.WindowInsetsSides
+import androidx.compose.foundation.layout.ime
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.only
+import androidx.compose.foundation.layout.union
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -15,6 +22,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -43,11 +51,21 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.unit.dp
 import io.mynote.app.AppContainer
 import io.mynote.app.data.BlockRow
@@ -82,7 +100,53 @@ fun NoteEditorScreen(
     val blocks by container.database.blocks().observeForNote(noteId)
         .collectAsState(initial = emptyList())
 
+    // Sorted here as well as in SQL. A fractional index is only meaningful under
+    // code-point comparison, and Kotlin's String ordering is exactly that —
+    // whereas a store's collation may not be. iOS shipped blocks in the wrong
+    // order for precisely this reason.
+    val ordered = remember(blocks) { blocks.sortedBy { it.orderKey } }
+    // The block the formatting bar acts on: the one being edited, and after
+    // focus leaves, still the one that was. Clearing this the moment the field
+    // lost focus took the bar off screen between the press and the release of
+    // its own buttons, so the press never became a click and nothing happened.
+    var activeBlockId by remember(noteId) { mutableStateOf<String?>(null) }
+    // Where typing should continue after an edit that moved it. Splitting a
+    // block is only half the behaviour; without this the caret stayed in the
+    // block above and the next keystroke went to the wrong one.
+    var caret by remember(noteId) { mutableStateOf<CaretRequest?>(null) }
+    val focusManager = LocalFocusManager.current
+    val listState = rememberLazyListState()
+
+    // Bring the target into view before it is asked for the caret.
+    //
+    // The list is lazy, so a block outside the composed window does not exist
+    // yet and cannot take focus — and the caret stayed in the block above.
+    // Pressing Return five times near the end of a long note left five empty
+    // blocks behind and typed all five lines into the original one.
+    // Keyed on `ordered` as well: the caret is aimed the moment the repository
+    // call returns, which is usually before the store has emitted the new row —
+    // so the first run often cannot find the target at all, and keying on the
+    // request alone meant it was never looked for again.
+    LaunchedEffect(caret, ordered) {
+        val target = caret ?: return@LaunchedEffect
+        val index = ordered.indexOfFirst { it.id == target.blockId }
+        if (index < 0) return@LaunchedEffect
+        // +1: the title occupies the first item.
+        val item = index + 1
+        if (listState.layoutInfo.visibleItemsInfo.none { it.index == item }) {
+            listState.scrollToItem(item)
+        }
+    }
+
     Scaffold(
+        // The window is edge-to-edge, so `adjustResize` does not shrink it and
+        // the keyboard simply covers whatever is at the bottom — which is the
+        // formatting bar. Holding the whole screen above the IME is what puts
+        // the bar back on screen; without it the controls existed but nobody
+        // could ever see or press them.
+        modifier = Modifier.windowInsetsPadding(
+            WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom)
+        ),
         containerColor = colors.background,
         topBar = {
             TopAppBar(
@@ -103,7 +167,8 @@ fun NoteEditorScreen(
                 actions = {
                     IconButton(onClick = {
                         scope.launch {
-                            container.repository.appendBlock(noteId, blocks.lastOrNull()?.orderKey)
+                            val id = container.repository.appendBlock(noteId, ordered.lastOrNull()?.orderKey)
+                            caret = CaretRequest(id, CaretRequest.END)
                         }
                     }) {
                         Icon(Icons.Default.Add, "Add block", tint = colors.accent)
@@ -112,9 +177,30 @@ fun NoteEditorScreen(
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = colors.background),
             )
         },
+        bottomBar = {
+            val active = ordered.firstOrNull { it.id == activeBlockId }
+            if (active != null) {
+                BlockFormatBar(
+                    current = BlockType.fromWire(active.type) ?: BlockType.PARAGRAPH,
+                    onSelect = { type ->
+                        scope.launch {
+                            container.repository.setBlockType(active.id, type)
+                            // Hand the caret back, so changing a block's type
+                            // does not also end the sentence.
+                            caret = CaretRequest(active.id, CaretRequest.END)
+                        }
+                    },
+                    onDone = {
+                        focusManager.clearFocus()
+                        activeBlockId = null
+                    },
+                )
+            }
+        },
     ) { padding ->
         Box(Modifier.padding(padding).fillMaxSize().background(colors.background)) {
             LazyColumn(
+                state = listState,
                 modifier = Modifier
                     .widthIn(max = metrics.maxContentWidth)
                     .fillMaxWidth()
@@ -140,21 +226,74 @@ fun NoteEditorScreen(
                     )
                 }
 
-                items(blocks, key = { it.id }) { row ->
+                items(ordered, key = { it.id }) { row ->
                     BlockEditor(
                         row = row,
+                        caret = caret?.takeIf { it.blockId == row.id },
+                        onCaretPlaced = { placed -> if (caret?.blockId == placed) caret = null },
                         onChange = { updated -> scope.launch { container.repository.update(updated) } },
-                        onSplit = {
+                        onSplit = { before, after ->
                             scope.launch {
-                                val next = blocks.firstOrNull { it.orderKey > row.orderKey }?.orderKey
-                                container.repository.appendBlock(noteId, row.orderKey, next)
+                                val next = ordered.firstOrNull { it.orderKey > row.orderKey }?.orderKey
+                                row.asDomain()?.let {
+                                    val id = container.repository.splitBlock(it, before, after, next)
+                                    // Typing continues at the start of what was
+                                    // carried down, as it does on iOS.
+                                    caret = CaretRequest(id, 0)
+                                }
                             }
                         },
+                        onMergeBackwards = {
+                            scope.launch {
+                                // A divider holds no text field, so folding text
+                                // into one would put it somewhere the writer can
+                                // never reach it again — and then asking it for
+                                // the caret brought the app down. Merge into the
+                                // nearest block that can actually hold text.
+                                val previous = ordered.lastOrNull {
+                                    it.orderKey < row.orderKey && it.holdsText
+                                }
+                                val block = container.repository.blockById(row.id) ?: return@launch
+                                if (previous == null) {
+                                    // Already the first block. Backspacing out of a
+                                    // list or heading turns it back into plain text,
+                                    // which is the usual way out of a style applied
+                                    // by accident.
+                                    if (block.type != BlockType.PARAGRAPH) {
+                                        container.repository.setBlockType(block.id, BlockType.PARAGRAPH)
+                                    }
+                                } else {
+                                    container.repository.blockById(previous.id)?.let { above ->
+                                        val offset = container.repository.mergeIntoPrevious(block, above)
+                                        // The caret sits where the two texts
+                                        // join, so backspace is undone by
+                                        // typing. The joined text travels with
+                                        // it: the block above is about to take
+                                        // focus, and a focused field does not
+                                        // accept text from the store.
+                                        caret = CaretRequest(
+                                            blockId = above.id,
+                                            offset = offset,
+                                            text = above.content.text + block.content.text,
+                                        )
+                                    }
+                                }
+                            }
+                        },
+                        onFocusChange = { focused -> if (focused) activeBlockId = row.id },
                         onDelete = {
                             // Never leave a note with zero blocks — there would
                             // be nowhere to type.
                             if (blocks.size > 1) {
-                                scope.launch { container.repository.deleteBlock(row.id) }
+                                val previous = ordered.lastOrNull {
+                                    it.orderKey < row.orderKey && it.holdsText
+                                }
+                                scope.launch {
+                                    container.repository.deleteBlock(row.id)
+                                    if (previous != null) {
+                                        caret = CaretRequest(previous.id, CaretRequest.END)
+                                    }
+                                }
                             }
                         },
                     )
@@ -169,7 +308,8 @@ fun NoteEditorScreen(
                             .height(120.dp)
                             .clickable {
                                 scope.launch {
-                                    container.repository.appendBlock(noteId, blocks.lastOrNull()?.orderKey)
+                                    val id = container.repository.appendBlock(noteId, ordered.lastOrNull()?.orderKey)
+                                    caret = CaretRequest(id, CaretRequest.END)
                                 }
                             }
                     )
@@ -206,8 +346,15 @@ private fun TitleField(title: String, onChange: (String) -> Unit) {
 @Composable
 private fun BlockEditor(
     row: BlockRow,
+    // Non-null when this block is the one typing should move into.
+    caret: CaretRequest?,
+    onCaretPlaced: (String) -> Unit,
     onChange: (Block) -> Unit,
-    onSplit: () -> Unit,
+    // Return pressed, carrying the text either side of the caret.
+    onSplit: (String, String) -> Unit,
+    // Backspace pressed with the caret at the very start.
+    onMergeBackwards: () -> Unit,
+    onFocusChange: (Boolean) -> Unit,
     onDelete: () -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
@@ -215,20 +362,48 @@ private fun BlockEditor(
 
     val type = BlockType.fromWire(row.type) ?: BlockType.PARAGRAPH
     val content = remember(row.content) { BlockContent.decode(row.content) }
-    var text by remember(row.id) { mutableStateOf(content.text) }
+    // A TextFieldValue rather than a String: the caret position is what decides
+    // whether backspace deletes a character or folds this block into the one
+    // above, and a plain String does not carry it.
+    var field by remember(row.id) { mutableStateOf(TextFieldValue(content.text)) }
+    val text = field.text
     var menuOpen by remember { mutableStateOf(false) }
     var isFocused by remember(row.id) { mutableStateOf(false) }
+    val focusRequester = remember(row.id) { FocusRequester() }
+
+    LaunchedEffect(caret) {
+        val request = caret ?: return@LaunchedEffect
+        val body = request.text ?: field.text
+        val target =
+            if (request.offset == CaretRequest.END) body.length
+            else request.offset.coerceIn(0, body.length)
+        field = TextFieldValue(body, TextRange(target))
+        // A block type that renders no text field has no requester attached, and
+        // requesting focus on one throws. Nothing above should aim the caret at
+        // such a block, but a crash in the editor is far worse than a caret that
+        // does not move.
+        runCatching { focusRequester.requestFocus() }
+        onCaretPlaced(row.id)
+    }
 
     LaunchedEffect(row.content) {
         // Ownership decides this: while the field has focus it owns its text,
         // so a write echoing back from the store cannot reach the screen. Once
         // focus leaves, the store is authoritative.
         //
-        // Previously this screen adopted nothing at all, so an edit made on
-        // another device stayed invisible until the note was reopened.
+        // The guard has to be ownership and not a comparison against the last
+        // text written. Every keystroke is a separate write, and the echoes
+        // arrive behind the typing — so "is this different from what I last
+        // sent?" is true for every stale echo in the queue, and adopting one
+        // rewinds the field. Typing "first" came back as "fir".
+        //
+        // An edit that genuinely replaces this field's text while it is focused
+        // — folding the block below into this one — therefore cannot arrive
+        // this way. It arrives in the caret request instead, which carries the
+        // text with it and does not depend on when the store catches up.
         val incoming = BlockContent.decode(row.content).text
-        if (!isFocused && incoming != text) {
-            text = incoming
+        if (!isFocused && incoming != field.text) {
+            field = field.copy(text = incoming)
         }
     }
 
@@ -294,8 +469,35 @@ private fun BlockEditor(
                 )
             }
             BasicTextField(
-                value = text,
-                onValueChange = { text = it; emit(newText = it) },
+                value = field,
+                onValueChange = { newValue ->
+                    // Return splits the block rather than inserting a newline. A
+                    // block editor has no use for a line break inside a
+                    // paragraph — that is what the next block is for.
+                    //
+                    // Only a newline that was just typed counts. Scanning the
+                    // whole value for one split the block again on every
+                    // keystroke if its text already contained a line break —
+                    // which it can, because a paste keeps them and iOS stores
+                    // them verbatim, so such a block arrives over sync.
+                    val caretPos = newValue.selection.start
+                    val typedReturn = caretPos in 1..newValue.text.length &&
+                        newValue.text[caretPos - 1] == '\n'
+                    if (typedReturn) {
+                        val newline = caretPos - 1
+                        val head = newValue.text.substring(0, newline)
+                        // Adopt the head immediately. The store write below is
+                        // async, and `LaunchedEffect(row.content)` deliberately
+                        // ignores echoes while this field has focus — so without
+                        // this the block would keep showing the whole pre-split
+                        // string until the note was reopened.
+                        field = TextFieldValue(head, TextRange(head.length))
+                        onSplit(head, newValue.text.substring(newline + 1))
+                    } else {
+                        field = newValue
+                        emit(newText = newValue.text)
+                    }
+                },
                 textStyle = TextStyle(
                     color = if (type == BlockType.QUOTE) colors.textSecondary else colors.textPrimary,
                     fontSize = fontSizeFor(type, metrics.baseSize),
@@ -306,7 +508,27 @@ private fun BlockEditor(
                 cursorBrush = SolidColor(colors.accent),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .onFocusChanged { isFocused = it.isFocused },
+                    .focusRequester(focusRequester)
+                    .onFocusChanged {
+                        isFocused = it.isFocused
+                        onFocusChange(it.isFocused)
+                    }
+                    // Backspace with the caret at the very start folds this block
+                    // into the one above. When the field is empty there is nothing
+                    // to delete, so no text change is reported and this key event
+                    // is the only signal there is.
+                    .onPreviewKeyEvent { event ->
+                        val atStart = field.selection.collapsed && field.selection.start == 0
+                        if (event.type == KeyEventType.KeyDown &&
+                            event.key == Key.Backspace &&
+                            atStart
+                        ) {
+                            onMergeBackwards()
+                            true
+                        } else {
+                            false
+                        }
+                    },
             )
         }
 
@@ -333,6 +555,32 @@ private fun BlockEditor(
         }
     }
 }
+
+/**
+ * A request to put the caret in a particular block.
+ *
+ * Splitting, merging and deleting all move where typing should continue, and
+ * each knows the offset it wants: the start of the carried-down text, the point
+ * two blocks were joined, or the end of whatever is there.
+ */
+private data class CaretRequest(
+    val blockId: String,
+    val offset: Int,
+    /**
+     * Text to put in the block as the caret lands, when the move also replaced
+     * what was there — a merge. Null means leave the text alone and only move
+     * the caret.
+     */
+    val text: String? = null,
+) {
+    companion object {
+        const val END = -1
+    }
+}
+
+/** Whether this row renders a text field the caret can land in. */
+private val BlockRow.holdsText: Boolean
+    get() = BlockType.fromWire(type) != BlockType.DIVIDER
 
 private val BlockType.isHeading: Boolean
     get() = this == BlockType.HEADING1 || this == BlockType.HEADING2 || this == BlockType.HEADING3
@@ -376,4 +624,19 @@ private fun fontSizeFor(type: BlockType, base: androidx.compose.ui.unit.TextUnit
     BlockType.HEADING3 -> base * 1.15f
     BlockType.CODE -> base * 0.92f
     else -> base
+}
+
+/** The stored row as the domain type the repository works in. */
+private fun BlockRow.asDomain(): Block? {
+    val blockType = BlockType.fromWire(type) ?: return null
+    return Block(
+        id = id,
+        noteId = noteId,
+        parentId = parentId,
+        orderKey = orderKey,
+        type = blockType,
+        content = BlockContent.decode(content),
+        hlc = hlc,
+        deleted = deleted,
+    )
 }

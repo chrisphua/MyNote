@@ -77,6 +77,41 @@ There is no build-time check; the vectors are the only guard.
   imply otherwise.
 - **Swift 6:** a nonisolated `deinit` cannot touch `@MainActor` state, and a
   `ModelContext` belongs to exactly one actor.
+- **Compose: `adjustResize` does nothing under `enableEdgeToEdge()`.** The window
+  stops being resized for the keyboard, so anything anchored to the bottom —
+  a `Scaffold`'s `bottomBar` — is simply drawn underneath it. The formatting bar
+  shipped invisible this way, and the manifest looked correct the whole time.
+  Hold the screen above the IME explicitly:
+  `Modifier.windowInsetsPadding(WindowInsets.ime.union(WindowInsets.navigationBars).only(WindowInsetsSides.Bottom))`.
+- **A control that acts on the focused field must not vanish when focus
+  leaves.** Pressing a button in the formatting bar moves focus off the text, and
+  clearing the bar's state on focus-loss removed the bar between the press and
+  the release — so the press never became a click. Keep the last edited block,
+  and clear it on Done.
+- **A field that owns its text while focused cannot be handed new text through
+  the store.** The guard has to be ownership, not "is this different from what I
+  last wrote": every keystroke is its own write, the echoes arrive behind the
+  typing, and adopting a stale one rewinds the field — typing "first" came back
+  as "fir". So a merge, which replaces the text of a block that is about to take
+  focus, carries its text in the caret request instead of waiting for the store.
+- **A block that renders no text field must never be a caret target.** A
+  divider is the one we have. Folding a block into it puts the words where the
+  writer can never reach them again — and they still sync — while asking it for
+  the caret throws `FocusRequester is not initialized` and takes the app down.
+  The welcome note has a divider in the middle, so this was reachable on the
+  first note every new user opens. Pick the merge or delete target with
+  `holdsText` / `textBlock(above:)`, on **both** platforms.
+- **A block is written whole, so never build a write on a composition
+  snapshot.** `asChange()` sends every field including `content`. A snapshot the
+  screen captured a frame ago still holds the text from before the last
+  keystroke, so a "change the type" write built on it puts the older text back
+  under a newer clock and the character is gone, locally and in the backup.
+  Re-read the row inside the coroutine (`setBlockType`, `blockById`); launches on
+  one dispatcher run in order, so the keystroke has landed by then.
+- **`uiautomator dump` only covers the app's own window.** A Compose
+  `DropdownMenu` is a separate window and never appears in the dump, which reads
+  exactly like a button that does not respond. Take a screenshot before
+  concluding a tap was lost.
 - **SwiftData turns CloudKit mirroring on by itself.** `ModelConfiguration`
   defaults to `cloudKitDatabase: .automatic`, which enables mirroring the moment
   it finds an iCloud entitlement — and this app has one, for iCloud *Drive*
