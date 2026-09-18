@@ -14,12 +14,21 @@ concurrency:
   group: ios-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  # Pin the toolchain so CI and a developer machine agree. Leaving each to pick
+  # its own default is how two failures reached main that no local run could
+  # reproduce: a simulator runtime the pinned SDK did not have, then XCUITest's
+  # main-actor isolation, which only the older compiler enforced.
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+
 jobs:
   core-tests:
     name: Core package tests
     runs-on: macos-15
     steps:
       - uses: actions/checkout@v4
+      - name: Report toolchain
+        run: xcodebuild -version && swift --version
       # No simulator needed: this is where the sync engine is actually verified.
       - name: Test MyNoteCore
         working-directory: ios/MyNoteCore

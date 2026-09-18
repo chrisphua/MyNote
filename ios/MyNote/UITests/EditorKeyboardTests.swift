@@ -7,6 +7,10 @@ import XCTest
 /// shipped broken: `TextField(axis: .vertical)` swallowed Return as a newline,
 /// and nothing handled backspace at all, which left an empty block impossible to
 /// remove from the keyboard.
+/// `@MainActor` because XCUITest's API is main-actor isolated. Some Xcode
+/// versions do not enforce it and some do, so without this the suite compiles
+/// locally and fails on CI.
+@MainActor
 final class EditorKeyboardTests: XCTestCase {
 
     private var app: XCUIApplication!
