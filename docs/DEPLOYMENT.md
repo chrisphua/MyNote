@@ -101,6 +101,50 @@ a rejection costs another review cycle:
 
 ---
 
+## Submitting to the App Store
+
+The binary is the easy half. Everything below it is the half that blocks a
+release.
+
+**Done in the repo:**
+
+- Listing text — `ios/fastlane/metadata/en-US/`. Edited as files, not in a web
+  form, so the next release is a diff.
+- Screenshots — `ios/fastlane/screenshots/en-US/`, captured by
+  `MyNoteUITests/StoreScreenshots` at the two sizes a universal app needs:
+  1320x2868 (iPhone 6.9") and 2064x2752 (iPad 13"). Re-run it after any visual
+  change rather than re-taking ten screenshots:
+
+  ```bash
+  cd ios && xcodegen generate
+  xcodebuild test -project MyNote.xcodeproj -scheme MyNote \
+    -only-testing:MyNoteUITests/StoreScreenshots \
+    -destination 'id=<simulator udid>' -resultBundlePath /tmp/shots.xcresult
+  xcrun xcresulttool export attachments \
+    --path /tmp/shots.xcresult --output-path /tmp/shots
+  ```
+
+- Privacy policy and support pages — `site/`. Plain HTML, no build step.
+
+**Still needs a person:**
+
+1. **Put `site/` online and fill in `SUPPORT_EMAIL_HERE`.** Apple requires a
+   reachable privacy policy URL *and* a support URL, and rejects both if they
+   404. A private repo cannot serve GitHub Pages on a free plan, so the $0
+   route is a separate **public** repo containing only these two pages —
+   `https://<user>.github.io/<repo>/privacy.html`. Do not use a work email
+   address on a page attached to a personal app.
+2. **App Privacy** in App Store Connect. MyNote's is unusually short: *Data Not
+   Collected*. Answer nothing else, because nothing else is true.
+3. **Category, age rating, pricing.** Productivity; 4+; free. Nothing is for
+   sale, so no Paid Applications Agreement is needed for this release and there
+   is no Restore Purchase control to provide.
+4. **Export compliance** is already declared in `Info.plist`
+   (`ITSAppUsesNonExemptEncryption = false`), so the upload does not prompt.
+5. **Attach the build and submit.**
+
+---
+
 ## First-time setup
 
 Shorter than it used to be: there is no Cloudflare account, no database, no
