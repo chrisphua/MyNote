@@ -49,6 +49,18 @@ already owns, and nothing of theirs touches hardware we control.
   with them.
 - Sign-in. There is no account to create.
 
+### Fixed
+
+- **The app crashed on launch on a real device.** SwiftData defaults
+  `ModelConfiguration` to `cloudKitDatabase: .automatic`, which enables CloudKit
+  mirroring as soon as it finds an iCloud entitlement — and MyNote has one, for
+  iCloud *Drive* documents. CloudKit rejects the schema, because it supports
+  neither unique constraints nor non-optional attributes without defaults, and
+  MyNote uses both. The store failed to load, the in-memory fallback failed for
+  the same reason, and the app died. Mirroring is now switched off explicitly;
+  MyNote does not use CloudKit at all. It could not reproduce in a simulator,
+  where entitlements have no effect.
+
 ### Known gaps
 
 Attachment bytes are not yet uploaded, device files are rewritten whole rather

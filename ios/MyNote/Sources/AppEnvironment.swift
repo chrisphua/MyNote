@@ -29,17 +29,46 @@ final class AppEnvironment {
     init() {
         let schema = Schema([NoteEntity.self, BlockEntity.self, ThemeEntity.self,
                              RemoteVersion.self, SyncMeta.self])
-        let config = ModelConfiguration(schema: schema, isStoredInMemoryOnly: false)
+
+        // CloudKit mirroring must be switched off explicitly.
+        //
+        // `ModelConfiguration` defaults to `.automatic`, which turns mirroring
+        // ON as soon as it finds an iCloud entitlement — and this app has one,
+        // for iCloud *Drive* documents. CloudKit then rejects the schema,
+        // because it supports neither unique constraints nor non-optional
+        // attributes without defaults, and this app relies on both. The store
+        // fails to load and the app dies on launch.
+        //
+        // It cannot reproduce in a simulator, where the entitlement has no
+        // effect, so it only ever appears on a real device.
+        //
+        // MyNote does not use CloudKit at all: backups are plain files written
+        // into the user's own Drive folder. See docs/BACKUP-FORMAT.md.
+        let onDisk = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: false,
+            cloudKitDatabase: .none
+        )
+        let inMemory = ModelConfiguration(
+            schema: schema,
+            isStoredInMemoryOnly: true,
+            cloudKitDatabase: .none
+        )
+
         do {
-            modelContainer = try ModelContainer(for: schema, configurations: config)
+            modelContainer = try ModelContainer(for: schema, configurations: onDisk)
         } catch {
             // A corrupt local database must not brick the app; fall back to
-            // memory so the user can at least export and reinstall.
-            assertionFailure("persistent store unavailable: \(error)")
-            modelContainer = try! ModelContainer(
-                for: schema,
-                configurations: ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
-            )
+            // memory so the user can still write, and still reach Settings to
+            // reconnect a backup that has their notes in it.
+            print("MyNote: persistent store unavailable, running in memory — \(error)")
+            do {
+                modelContainer = try ModelContainer(for: schema, configurations: inMemory)
+            } catch {
+                // Nothing left to fall back to: an in-memory store cannot fail
+                // for any reason the app could recover from.
+                fatalError("MyNote could not open any note store: \(error)")
+            }
         }
 
         store = SwiftDataStore(modelContainer: modelContainer)

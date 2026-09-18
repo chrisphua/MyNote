@@ -215,6 +215,31 @@ To exercise the purchase without spending money: iOS uses a StoreKit
 configuration file in the scheme; Android needs a signed build on the internal
 test track with your account as a licence tester.
 
+## Verifying on a real device
+
+**Run every release candidate on a physical device before uploading.** A
+simulator does not apply entitlements, so anything gated on one — iCloud,
+keychain access groups, StoreKit — behaves differently or not at all there. The
+0.2.0 launch crash was exactly this: SwiftData quietly enabled CloudKit
+mirroring because it saw the iCloud entitlement, which a simulator never
+triggers.
+
+```bash
+cd ios
+xcodebuild -project MyNote.xcodeproj -scheme MyNote -configuration Release \
+  -destination 'generic/platform=iOS' -derivedDataPath /tmp/mynote-dev \
+  -allowProvisioningUpdates build
+
+DEV=$(xcrun devicectl list devices | grep -i iphone | awk '{print $(NF-1)}')
+xcrun devicectl device install app --device "$DEV" \
+  /tmp/mynote-dev/Build/Products/Release-iphoneos/MyNote.app
+xcrun devicectl device process launch --device "$DEV" --console \
+  --terminate-existing com.chrisphua.MyNote
+```
+
+`--console` streams the app's output, so a launch failure names itself instead
+of arriving later as a symbolicated crash report.
+
 ## Verifying a real backup
 
 The most useful manual test, and the one worth doing before every release:
@@ -248,3 +273,4 @@ a genuinely breaking change.
 | Notes not appearing on the other device | They chose iCloud on one and Drive on the other — the two do not meet. Check the storage picker on both. |
 | `403 insufficient scope` | The OAuth client was created for the wrong bundle id / package, or the scope was changed. |
 | iOS build cannot find the Xcode project | It is generated, not committed. Run `xcodegen generate`. |
+| App crashes instantly on device but is fine in a simulator | Almost certainly entitlement-related. Attach `--console` (above) and read the first error. If it mentions CloudKit, a `ModelConfiguration` is missing `cloudKitDatabase: .none`. |

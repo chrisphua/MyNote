@@ -19,6 +19,10 @@ into another's file breaks the core safety property of the design.
 
 ## Commands
 
+**Anything touching entitlements must be tested on a real device.** A simulator
+does not apply them, so a whole class of launch failure is invisible there —
+see the CloudKit trap below.
+
 ```bash
 # iOS
 cd ios/MyNoteCore && swift test              # no simulator, <1s
@@ -73,6 +77,14 @@ There is no build-time check; the vectors are the only guard.
   imply otherwise.
 - **Swift 6:** a nonisolated `deinit` cannot touch `@MainActor` state, and a
   `ModelContext` belongs to exactly one actor.
+- **SwiftData turns CloudKit mirroring on by itself.** `ModelConfiguration`
+  defaults to `cloudKitDatabase: .automatic`, which enables mirroring the moment
+  it finds an iCloud entitlement — and this app has one, for iCloud *Drive*
+  documents. CloudKit then rejects our schema (it supports neither unique
+  constraints nor non-optional attributes without defaults, and we use both),
+  the store fails to load, and the app dies on launch. Always pass
+  `cloudKitDatabase: .none`. **This cannot reproduce in a simulator**, where the
+  entitlement has no effect — it only appears on a real device.
 
 ## Conventions
 
