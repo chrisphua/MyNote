@@ -48,6 +48,10 @@ public struct SyncResponse: Codable, Sendable {
 public enum BlockType: String, Codable, Sendable, CaseIterable {
     case paragraph, heading1, heading2, heading3
     case todo, bullet, numbered, quote, code, divider, image
+    /// Ink, drawn with a finger or an Apple Pencil. The strokes live in an
+    /// attachment; the block only carries its id, so a page of handwriting does
+    /// not bloat the note itself.
+    case drawing
 
     /// Whether pressing Return keeps this type for the new block.
     ///

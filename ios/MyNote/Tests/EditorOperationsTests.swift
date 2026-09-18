@@ -141,6 +141,37 @@ struct EditorOperationsTests {
                 "deleting it must not bring it back")
     }
 
+    @Test("a drawing block keeps the same ink when converted away and back")
+    func drawingKeepsItsAttachment() async throws {
+        let (_, repository, context) = try makeFixture()
+        let noteId = await repository.createNote()
+
+        var block = try #require(try blocks(in: context, noteId: noteId).first?.asDomain)
+        block.type = .drawing
+        block.content.attachmentId = "ink-1"
+        await repository.update(block: block)
+
+        // Turning it into text and back must not orphan the strokes.
+        block.type = .paragraph
+        await repository.update(block: block)
+        block.type = .drawing
+        await repository.update(block: block)
+
+        let result = try #require(try blocks(in: context, noteId: noteId).first)
+        #expect(result.type == BlockType.drawing.rawValue)
+        #expect(BlockContent.decode(result.content).attachmentId == "ink-1")
+    }
+
+    @Test("a drawing survives the wire format")
+    func drawingRoundTrips() throws {
+        let block = Block(id: "d1", noteId: "n1", orderKey: "V", type: .drawing,
+                          content: BlockContent(text: "", attachmentId: "ink-1"),
+                          hlc: "0000000000000064-0000-devA")
+        let restored = try #require(Block(change: block.asChange()))
+        #expect(restored == block)
+        #expect(restored.content.attachmentId == "ink-1")
+    }
+
     @Test("a list carries on when split; a heading does not")
     func splitKeepsListTypes() async throws {
         let (_, repository, context) = try makeFixture()

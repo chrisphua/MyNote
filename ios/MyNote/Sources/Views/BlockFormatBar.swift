@@ -22,7 +22,7 @@ struct BlockFormatBar: View {
     /// constantly sit nearest the left thumb.
     private static let ordered: [BlockType] = [
         .paragraph, .heading1, .heading2, .heading3,
-        .bullet, .numbered, .todo, .quote, .code, .divider,
+        .bullet, .numbered, .todo, .quote, .code, .drawing, .divider,
     ]
 
     var body: some View {

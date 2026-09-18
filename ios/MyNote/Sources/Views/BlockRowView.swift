@@ -33,6 +33,11 @@ struct BlockRowView: View {
                 Divider().overlay(theme.current.border).padding(.vertical, 8)
             case .image:
                 imagePlaceholder
+            case .drawing:
+                DrawingBlockView(
+                    attachmentId: content.attachmentId ?? block.id,
+                    onEdited: { commit(text: text) }
+                )
             default:
                 editableRow
             }

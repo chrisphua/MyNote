@@ -81,7 +81,18 @@ enum class BlockType {
     @SerialName("quote") QUOTE,
     @SerialName("code") CODE,
     @SerialName("divider") DIVIDER,
-    @SerialName("image") IMAGE;
+    @SerialName("image") IMAGE,
+
+    /**
+     * Ink, drawn with a finger or a stylus. The strokes live in an attachment;
+     * the block only carries its id.
+     *
+     * Android cannot yet create these — iOS draws them with PencilKit, which has
+     * no equivalent here — but it must know the type exists, or a drawing made
+     * on an iPhone would be dropped on read rather than shown as something the
+     * reader can go and look at.
+     */
+    @SerialName("drawing") DRAWING;
 
     val wire: String
         get() = when (this) {
