@@ -56,7 +56,6 @@ import io.mynote.app.theme.LocalMyNoteMetrics
 import io.mynote.core.Block
 import io.mynote.core.BlockContent
 import io.mynote.core.BlockType
-import io.mynote.core.EditorEcho
 import kotlinx.coroutines.launch
 
 /**
@@ -220,25 +219,20 @@ private fun BlockEditor(
     var menuOpen by remember { mutableStateOf(false) }
     var isFocused by remember(row.id) { mutableStateOf(false) }
 
-    // Distinguishes the store echoing our own keystrokes from a genuine edit
-    // arriving from another device. Without it this screen had the opposite
-    // problem to iOS: it never adopted a remote edit at all, so a change made
-    // elsewhere stayed invisible until the note was reopened. See EditorEcho.
-    val echo = remember(row.id) { EditorEcho() }
-
     LaunchedEffect(row.content) {
+        // Ownership decides this: while the field has focus it owns its text,
+        // so a write echoing back from the store cannot reach the screen. Once
+        // focus leaves, the store is authoritative.
+        //
+        // Previously this screen adopted nothing at all, so an edit made on
+        // another device stayed invisible until the note was reopened.
         val incoming = BlockContent.decode(row.content).text
-        // Never fight the person typing, and never adopt our own write coming
-        // back — it can arrive out of order and would clobber the field.
-        if (!isFocused && echo.shouldAdopt(incoming) && incoming != text) {
+        if (!isFocused && incoming != text) {
             text = incoming
         }
     }
 
     fun emit(newText: String = text, newContent: BlockContent = content, newType: BlockType = type) {
-        // Recorded before the write goes out, so the echo is recognised whenever
-        // it comes back.
-        echo.sending(newText)
         onChange(
             Block(
                 id = row.id,

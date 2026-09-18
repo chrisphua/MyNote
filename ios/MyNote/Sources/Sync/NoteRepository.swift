@@ -63,6 +63,46 @@ struct NoteRepository {
         return block.id
     }
 
+    /// Return pressed: the text before the caret stays, the rest becomes a new
+    /// block underneath.
+    ///
+    /// - Returns: the id of the new block, so the caller can move the caret into it.
+    @discardableResult
+    func splitBlock(_ block: Block, before: String, after: String,
+                    nextOrderKey: String?) async -> String {
+        var head = block
+        head.content.text = before
+        await update(block: head)
+
+        let tail = Block(
+            noteId: block.noteId,
+            orderKey: FractionalIndex.between(block.orderKey, nextOrderKey),
+            // A list carries on as a list; a heading does not, because the line
+            // after a heading is almost never another heading.
+            type: block.type.continuesOnSplit ? block.type : .paragraph,
+            content: BlockContent(text: after),
+            hlc: await coordinator.engine.stamp()
+        )
+        await write(tail.asChange())
+        return tail.id
+    }
+
+    /// Backspace at the start of a block: fold it into the one above.
+    ///
+    /// - Returns: the caret offset in the previous block, i.e. the join point.
+    @discardableResult
+    func mergeIntoPrevious(_ block: Block, previous: Block) async -> Int {
+        let joinOffset = previous.content.text.count
+
+        if !block.content.text.isEmpty {
+            var merged = previous
+            merged.content.text += block.content.text
+            await update(block: merged)
+        }
+        await deleteBlock(block.id)
+        return joinOffset
+    }
+
     func update(block: Block) async {
         var updated = block
         updated.hlc = await coordinator.engine.stamp()

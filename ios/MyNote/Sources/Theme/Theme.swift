@@ -46,6 +46,27 @@ struct Theme: Equatable {
         spec.typography.baseSize * (spec.typography.lineHeight - 1)
     }
 
+    /// UIKit twin of `font(_:)`, for the block text view.
+    ///
+    /// Scaled through `UIFontMetrics` so a custom theme still honours the
+    /// reader's Dynamic Type setting — the same guarantee `font(_:)` gets from
+    /// `relativeTo:`.
+    func uiFont(_ role: FontRole) -> UIFont {
+        let size = spec.typography.baseSize * role.scale
+        let base: UIFont
+
+        if spec.typography.fontFamily == "system" {
+            base = role == .code
+                ? UIFont.monospacedSystemFont(ofSize: size, weight: role.uiWeight(spec.typography.headingWeight))
+                : UIFont.systemFont(ofSize: size, weight: role.uiWeight(spec.typography.headingWeight))
+        } else {
+            base = UIFont(name: spec.typography.fontFamily, size: size)
+                ?? UIFont.systemFont(ofSize: size)
+        }
+
+        return UIFontMetrics(forTextStyle: role.uiTextStyle).scaledFont(for: base)
+    }
+
     enum FontRole {
         case body, heading1, heading2, heading3, code, caption
 
@@ -71,6 +92,31 @@ struct Theme: Equatable {
         }
 
         var design: Font.Design { self == .code ? .monospaced : .default }
+
+        var uiTextStyle: UIFont.TextStyle {
+            switch self {
+            case .body, .code: .body
+            case .heading1: .title1
+            case .heading2: .title2
+            case .heading3: .title3
+            case .caption: .caption1
+            }
+        }
+
+        func uiWeight(_ headingWeight: Int) -> UIFont.Weight {
+            switch self {
+            case .body, .code, .caption: return .regular
+            case .heading1, .heading2, .heading3:
+                switch headingWeight {
+                case ..<300: return .light
+                case ..<450: return .regular
+                case ..<550: return .medium
+                case ..<650: return .semibold
+                case ..<800: return .bold
+                default:     return .heavy
+                }
+            }
+        }
 
         func weight(_ headingWeight: Int) -> Font.Weight {
             switch self {

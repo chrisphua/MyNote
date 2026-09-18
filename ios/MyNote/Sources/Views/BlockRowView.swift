@@ -7,25 +7,22 @@ import MyNoteCore
 /// that is what makes "fully customisable" true rather than approximate.
 struct BlockRowView: View {
     let block: BlockEntity
-    /// Bound through from the editor so `.focused` can sit on the text field
-    /// itself. Putting it on this row instead silently does nothing — the
-    /// modifier only binds on a focusable control — which left the editor
-    /// unable to tell whether the user was typing.
-    @FocusState.Binding var focusedBlock: String?
+    @Binding var focusedBlockId: String?
+    @Binding var caret: CaretRequest?
+
     let onCommit: (Block) -> Void
-    let onSplit: () async -> Void
+    /// Return pressed, carrying the text either side of the caret.
+    let onSplit: (String, String) -> Void
+    /// Backspace pressed with the caret at the very start.
+    let onMergeBackwards: () -> Void
     let onDelete: () async -> Void
     let onChangeType: (BlockType) async -> Void
 
     @Environment(ThemeManager.self) private var theme
     @State private var text: String = ""
     @State private var didLoad = false
-    /// Distinguishes the store echoing our own keystrokes from a genuine edit
-    /// arriving from another device. See `EditorEcho`.
-    @State private var echo = EditorEcho()
 
-    private var isFocused: Bool { focusedBlock == block.id }
-
+    private var isFocused: Bool { focusedBlockId == block.id }
     private var type: BlockType { BlockType(rawValue: block.type) ?? .paragraph }
     private var content: BlockContent { BlockContent.decode(block.content) }
 
@@ -48,14 +45,18 @@ struct BlockRowView: View {
         .onChange(of: block.content) { _, newValue in
             let incoming = BlockContent.decode(newValue).text
 
-            // Never fight the person typing.
-            guard !isFocused else { return }
-
-            // Our own writes come back through the store asynchronously, and can
-            // arrive out of order. Adopting one would overwrite what is on
-            // screen with a stale value — including the block's original empty
-            // string, which empties the field and shows the placeholder again.
-            guard echo.shouldAdopt(incoming) else { return }
+            // Ownership, not content matching, decides this.
+            //
+            // While the field has focus it owns its text, and `BlockTextView`
+            // refuses to write anything into it — so a stale write coming back
+            // from the store can no longer reach the screen. Once focus leaves,
+            // the store is authoritative and whatever it says is correct.
+            //
+            // The exception is a structural edit: after a merge the block above
+            // gains focus *and* needs the folded-up text, so a caret aimed here
+            // by the editor overrides the focus rule.
+            let isStructuralTarget = caret?.blockId == block.id
+            guard !isFocused || isStructuralTarget else { return }
             guard incoming != text else { return }
 
             text = incoming
@@ -65,14 +66,21 @@ struct BlockRowView: View {
     private var editableRow: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
             marker
-            TextField(placeholder, text: $text, axis: .vertical)
-                .focused($focusedBlock, equals: block.id)
-                .font(font)
-                .foregroundStyle(type == .quote ? theme.current.textSecondary : theme.current.textPrimary)
-                .lineSpacing(theme.current.lineSpacing)
-                .textFieldStyle(.plain)
-                .onSubmit { Task { await onSplit() } }
-                .onChange(of: text) { _, newValue in commit(text: newValue) }
+            BlockTextView(
+                text: $text,
+                focusedBlockId: $focusedBlockId,
+                caret: $caret,
+                blockId: block.id,
+                placeholder: placeholder,
+                font: theme.current.uiFont(fontRole),
+                textColor: UIColor(type == .quote ? theme.current.textSecondary : theme.current.textPrimary),
+                placeholderColor: UIColor(theme.current.textSecondary),
+                tintColor: UIColor(theme.current.accentColor),
+                lineSpacing: theme.current.lineSpacing,
+                onSplit: onSplit,
+                onMergeBackwards: onMergeBackwards
+            )
+            .onChange(of: text) { _, newValue in commit(text: newValue) }
         }
         .padding(type == .code ? 10 : 0)
         .background(type == .code ? theme.current.codeBackground : .clear)
@@ -138,15 +146,17 @@ struct BlockRowView: View {
             }
     }
 
-    private var font: Font {
+    private var fontRole: Theme.FontRole {
         switch type {
-        case .heading1: theme.current.font(.heading1)
-        case .heading2: theme.current.font(.heading2)
-        case .heading3: theme.current.font(.heading3)
-        case .code:     theme.current.font(.code)
-        default:        theme.current.font(.body)
+        case .heading1: .heading1
+        case .heading2: .heading2
+        case .heading3: .heading3
+        case .code:     .code
+        default:        .body
         }
     }
+
+    private var font: Font { theme.current.font(fontRole) }
 
     private var placeholder: String {
         switch type {
@@ -163,9 +173,6 @@ struct BlockRowView: View {
         var updated = override ?? domain.content
         updated.text = newText
         domain.content = updated
-        // Recorded before the write goes out, so the echo is recognised whenever
-        // it comes back.
-        echo.sending(newText)
         onCommit(domain)
     }
 }

@@ -18,19 +18,31 @@ struct NoteEditorView: View {
     @Query private var notes: [NoteEntity]
     @Query private var blocks: [BlockEntity]
 
-    @FocusState private var focusedBlock: String?
-    @State private var showingBlockMenu = false
+    /// A plain binding, not `@FocusState`: focus is driven into `BlockTextView`,
+    /// which manages first responder itself so it can also place the caret.
+    @State private var focusedBlock: String?
+    @State private var caret: CaretRequest?
 
     init(noteId: String) {
         self.noteId = noteId
         _notes = Query(filter: #Predicate<NoteEntity> { $0.id == noteId })
-        _blocks = Query(
-            filter: #Predicate<BlockEntity> { $0.noteId == noteId && !$0.deleted },
-            sort: [SortDescriptor(\BlockEntity.orderKey)]
-        )
+        // Sorted in Swift below, not here — see `ordered`.
+        _blocks = Query(filter: #Predicate<BlockEntity> { $0.noteId == noteId && !$0.deleted })
     }
 
     private var note: NoteEntity? { notes.first }
+
+    /// Blocks in reading order.
+    ///
+    /// Sorted here rather than by the `@Query`, because a fractional index is
+    /// only meaningful under **code-point** comparison — `"V" < "k"` — and the
+    /// store's collation is not that. `@Query` returned a split block *above*
+    /// its own parent, while the identical records fetched through a
+    /// `ModelContext` came back correctly, so the ordering cannot be left to the
+    /// store. Swift's `<` on `String` is the comparison the index is defined in.
+    private var ordered: [BlockEntity] {
+        blocks.sorted { $0.orderKey < $1.orderKey }
+    }
     private var repository: NoteRepository {
         NoteRepository(store: app.store, coordinator: app.syncCoordinator)
     }
@@ -39,12 +51,16 @@ struct NoteEditorView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: theme.current.blockSpacing) {
                 titleField
-                ForEach(blocks) { block in
+                ForEach(ordered) { block in
                     BlockRowView(
                         block: block,
-                        focusedBlock: $focusedBlock,
+                        focusedBlockId: $focusedBlock,
+                        caret: $caret,
                         onCommit: { updated in Task { await repository.update(block: updated) } },
-                        onSplit: { await splitBlock(after: block) },
+                        onSplit: { before, after in
+                            Task { await split(block, before: before, after: after) }
+                        },
+                        onMergeBackwards: { Task { await mergeBackwards(from: block) } },
                         onDelete: { await removeBlock(block) },
                         onChangeType: { type in await changeType(block, to: type) }
                     )
@@ -122,22 +138,47 @@ struct NoteEditorView: View {
     // MARK: - Editing
 
     private func appendAtEnd() async {
-        let id = await repository.appendBlock(to: noteId, after: blocks.last?.orderKey)
+        let id = await repository.appendBlock(to: noteId, after: ordered.last?.orderKey)
         focusedBlock = id
+        caret = .end(of: id)
     }
 
-    private func splitBlock(after block: BlockEntity) async {
-        let next = blocks.first { $0.orderKey > block.orderKey }?.orderKey
-        let id = await repository.appendBlock(to: noteId, after: block.orderKey, before: next)
+    /// Return: the text after the caret moves into a new block below.
+    private func split(_ block: BlockEntity, before: String, after: String) async {
+        guard let domain = block.asDomain else { return }
+        let next = ordered.first { $0.orderKey > block.orderKey }?.orderKey
+        let id = await repository.splitBlock(domain, before: before, after: after,
+                                             nextOrderKey: next)
         focusedBlock = id
+        // Typing continues at the start of what was carried down.
+        caret = CaretRequest(blockId: id, offset: 0)
+    }
+
+    /// Backspace at the start: fold this block into the one above it.
+    private func mergeBackwards(from block: BlockEntity) async {
+        guard let previous = ordered.last(where: { $0.orderKey < block.orderKey }) else {
+            // Already the first block. Backspacing out of a list or heading turns
+            // it back into plain text, which is the usual way out of a style you
+            // did not mean to apply.
+            if let domain = block.asDomain, domain.type != .paragraph {
+                await changeType(block, to: .paragraph)
+            }
+            return
+        }
+        guard let domain = block.asDomain, let previousDomain = previous.asDomain else { return }
+
+        let joinOffset = await repository.mergeIntoPrevious(domain, previous: previousDomain)
+        focusedBlock = previous.id
+        caret = CaretRequest(blockId: previous.id, offset: joinOffset)
     }
 
     private func removeBlock(_ block: BlockEntity) async {
         // Never leave a note with zero blocks — there would be nowhere to type.
-        guard blocks.count > 1 else { return }
-        let previous = blocks.last { $0.orderKey < block.orderKey }
+        guard ordered.count > 1 else { return }
+        let previous = ordered.last { $0.orderKey < block.orderKey }
         await repository.deleteBlock(block.id)
         focusedBlock = previous?.id
+        if let previous { caret = .end(of: previous.id) }
     }
 
     private func changeType(_ block: BlockEntity, to type: BlockType) async {

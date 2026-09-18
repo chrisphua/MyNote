@@ -10,8 +10,9 @@ struct NoteListView: View {
     @Environment(ThemeManager.self) private var theme
 
     // Tombstoned notes stay in the database for sync but never in the list.
-    @Query(filter: #Predicate<NoteEntity> { !$0.deleted },
-           sort: [SortDescriptor(\NoteEntity.orderKey)])
+    // Sorted in Swift below for the same reason as the editor: a fractional
+    // index needs code-point comparison, which the store's collation is not.
+    @Query(filter: #Predicate<NoteEntity> { !$0.deleted })
     private var notes: [NoteEntity]
 
     @State private var searchText = ""
@@ -21,8 +22,9 @@ struct NoteListView: View {
     }
 
     private var filtered: [NoteEntity] {
-        guard !searchText.isEmpty else { return notes }
-        return notes.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
+        let ordered = notes.sorted { $0.orderKey < $1.orderKey }
+        guard !searchText.isEmpty else { return ordered }
+        return ordered.filter { $0.title.localizedCaseInsensitiveContains(searchText) }
     }
 
     var body: some View {

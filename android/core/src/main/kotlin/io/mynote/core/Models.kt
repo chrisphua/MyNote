@@ -89,6 +89,15 @@ enum class BlockType {
             else -> name.lowercase()
         }
 
+    /**
+     * Whether pressing Return keeps this type for the new block.
+     *
+     * Lists continue; a heading does not, because the line after a heading is
+     * almost never another heading.
+     */
+    val continuesOnSplit: Boolean
+        get() = this == TODO_ITEM || this == BULLET || this == NUMBERED
+
     companion object {
         fun fromWire(value: String): BlockType? =
             entries.firstOrNull { it.wire == value }

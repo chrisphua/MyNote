@@ -2,6 +2,7 @@ package io.mynote.app.sync
 
 import io.mynote.app.data.MyNoteDatabase
 import io.mynote.core.Block
+import io.mynote.core.BlockContent
 import io.mynote.core.BlockType
 import io.mynote.core.Change
 import io.mynote.core.Entity
@@ -68,6 +69,49 @@ class NoteRepository(
         )
         write(block.asChange())
         return block.id
+    }
+
+    /**
+     * Return pressed: the text before the caret stays, the rest becomes a new
+     * block underneath.
+     *
+     * @return the id of the new block, so the caller can move the caret into it.
+     */
+    suspend fun splitBlock(
+        block: Block,
+        before: String,
+        after: String,
+        nextOrderKey: String?,
+    ): String {
+        update(block.copy(content = block.content.copy(text = before)))
+
+        val tail = Block(
+            id = UUID.randomUUID().toString(),
+            noteId = block.noteId,
+            orderKey = FractionalIndex.between(block.orderKey, nextOrderKey),
+            // A list carries on as a list; a heading does not, because the line
+            // after a heading is almost never another heading.
+            type = if (block.type.continuesOnSplit) block.type else BlockType.PARAGRAPH,
+            content = BlockContent(text = after),
+            hlc = coordinator.engine.stamp(),
+        )
+        write(tail.asChange())
+        return tail.id
+    }
+
+    /**
+     * Backspace at the start of a block: fold it into the one above.
+     *
+     * @return the caret offset in the previous block, i.e. the join point.
+     */
+    suspend fun mergeIntoPrevious(block: Block, previous: Block): Int {
+        val joinOffset = previous.content.text.length
+
+        if (block.content.text.isNotEmpty()) {
+            update(previous.copy(content = previous.content.copy(text = previous.content.text + block.content.text)))
+        }
+        deleteBlock(block.id)
+        return joinOffset
     }
 
     suspend fun update(block: Block) {

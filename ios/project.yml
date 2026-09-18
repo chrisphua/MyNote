@@ -17,7 +17,7 @@ settings:
   base:
     DEVELOPMENT_TEAM: "9ZM956H7Q9"
     MARKETING_VERSION: "0.2.0"
-    CURRENT_PROJECT_VERSION: "5"
+    CURRENT_PROJECT_VERSION: "6"
     SWIFT_VERSION: "6.0"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     DEAD_CODE_STRIPPING: YES
@@ -98,13 +98,26 @@ targets:
       - package: MyNoteCore
         product: MyNoteCore
 
+  # The editor's keyboard behaviour cannot be unit tested — Return and backspace
+  # only mean anything to a real text view with a real caret. Three bugs in a row
+  # lived in the view layer while every unit test stayed green.
+  MyNoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: MyNote/UITests
+    dependencies:
+      - target: MyNote
+
 schemes:
   MyNote:
     build:
       targets:
         MyNote: all
         MyNoteTests: [test]
+        MyNoteUITests: [test]
     test:
       targets:
         - MyNoteTests
+        - MyNoteUITests
       gatherCoverageData: true

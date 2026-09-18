@@ -48,6 +48,17 @@ public struct SyncResponse: Codable, Sendable {
 public enum BlockType: String, Codable, Sendable, CaseIterable {
     case paragraph, heading1, heading2, heading3
     case todo, bullet, numbered, quote, code, divider, image
+
+    /// Whether pressing Return keeps this type for the new block.
+    ///
+    /// Lists continue; a heading does not, because the line after a heading is
+    /// almost never another heading.
+    public var continuesOnSplit: Bool {
+        switch self {
+        case .todo, .bullet, .numbered: true
+        default: false
+        }
+    }
 }
 
 public struct Note: Identifiable, Equatable, Sendable {
