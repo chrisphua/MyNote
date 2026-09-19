@@ -23,6 +23,12 @@ struct NoteEditorView: View {
     @State private var focusedBlock: String?
     @State private var caret: CaretRequest?
 
+    /// The title's own copy, for the same reason every block keeps one.
+    @State private var title: String = ""
+    @State private var titleLoaded = false
+    @State private var titleWriteTask: Task<Void, Never>?
+    @FocusState private var titleFocused: Bool
+
     init(noteId: String) {
         self.noteId = noteId
         _notes = Query(filter: #Predicate<NoteEntity> { $0.id == noteId })
@@ -48,8 +54,14 @@ struct NoteEditorView: View {
     }
 
     var body: some View {
+        ScrollViewReader { proxy in
+            editorScroll(proxy)
+        }
+    }
+
+    private func editorScroll(_ proxy: ScrollViewProxy) -> some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: theme.current.blockSpacing) {
+            LazyVStack(alignment: .leading, spacing: theme.current.blockSpacing) {
                 titleField
                 ForEach(ordered) { block in
                     BlockRowView(
@@ -57,6 +69,10 @@ struct NoteEditorView: View {
                         focusedBlockId: $focusedBlock,
                         caret: $caret,
                         onCommit: { updated in Task { await repository.update(block: updated) } },
+                        onPasteParagraphs: { before, paragraphs, after in
+                            Task { await paste(into: block, before: before,
+                                               paragraphs: paragraphs, after: after) }
+                        },
                         onSplit: { before, after in
                             Task { await split(block, before: before, after: after) }
                         },
@@ -64,6 +80,7 @@ struct NoteEditorView: View {
                         onDelete: { await removeBlock(block) },
                         onChangeType: { type in await changeType(block, to: type) }
                     )
+                    .id(block.id)
                 }
 
                 // Tapping the empty space below the last block starts a new one,
@@ -80,6 +97,15 @@ struct NoteEditorView: View {
         }
         .background(theme.current.background)
         .scrollDismissesKeyboard(.interactively)
+        // The stack is lazy, so a block outside the rendered window does not
+        // exist yet and cannot take focus. Anything that aims the caret has to
+        // bring the target into view first, or a split near the end of a long
+        // note types into the block above instead. A nil anchor scrolls the
+        // least amount needed, so a caret already on screen does not jump.
+        .onChange(of: caret) { _, request in
+            guard let request else { return }
+            proxy.scrollTo(request.blockId, anchor: nil)
+        }
         .navigationTitle(note?.title.isEmpty == false ? note!.title : "Untitled")
         .navigationBarTitleDisplayMode(.inline)
         .safeAreaInset(edge: .bottom) {
@@ -102,22 +128,60 @@ struct NoteEditorView: View {
             : theme.current.contentPadding * 1.5
     }
 
+    /// The note's title.
+    ///
+    /// Bound to local state, not straight to the store. Binding it to the model
+    /// meant every keystroke was written, re-read and handed back to the field,
+    /// which reset its contents and put the caret at the end — so after pasting
+    /// a title, a word could only ever be added after the last character.
+    /// The block fields already worked this way; the title was missed.
     private var titleField: some View {
-        TextField("Untitled", text: Binding(
-            get: { note?.title ?? "" },
-            set: { newValue in
-                guard let note else { return }
-                note.title = newValue
-                Task {
-                    await repository.rename(noteId: note.id, title: newValue, icon: note.icon,
-                                            parentId: note.parentId, orderKey: note.orderKey)
-                }
+        TextField("Untitled", text: $title, axis: .vertical)
+            .font(theme.current.font(.heading1))
+            .foregroundStyle(theme.current.textPrimary)
+            .textFieldStyle(.plain)
+            .padding(.bottom, 8)
+            .focused($titleFocused)
+            .onAppear {
+                guard !titleLoaded else { return }
+                title = note?.title ?? ""
+                titleLoaded = true
             }
-        ), axis: .vertical)
-        .font(theme.current.font(.heading1))
-        .foregroundStyle(theme.current.textPrimary)
-        .textFieldStyle(.plain)
-        .padding(.bottom, 8)
+            .onChange(of: title) { _, newValue in scheduleRename(to: newValue) }
+            .onChange(of: note?.title) { _, incoming in
+                // While it is being typed in, the field owns its text.
+                guard !titleFocused, let incoming, incoming != title else { return }
+                title = incoming
+            }
+            .onChange(of: titleFocused) { _, focused in
+                if !focused { flushRename() }
+            }
+            .onDisappear { flushRename() }
+    }
+
+    /// Coalesces a run of keystrokes into one rename, as blocks do.
+    private func scheduleRename(to newValue: String) {
+        titleWriteTask?.cancel()
+        titleWriteTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await rename(to: newValue)
+        }
+    }
+
+    private func flushRename() {
+        guard let pending = titleWriteTask else { return }
+        pending.cancel()
+        titleWriteTask = nil
+        let newValue = title
+        Task { await rename(to: newValue) }
+    }
+
+    private func rename(to newValue: String) async {
+        guard let note else { return }
+        note.title = newValue
+        await repository.rename(noteId: note.id, title: newValue, icon: note.icon,
+                                parentId: note.parentId, orderKey: note.orderKey)
     }
 
     // MARK: - Editing
@@ -147,6 +211,19 @@ struct NoteEditorView: View {
     /// mistake; here it fails quietly, which is worse.
     private func textBlock(above block: BlockEntity) -> BlockEntity? {
         ordered.last { $0.orderKey < block.orderKey && $0.type != BlockType.divider.rawValue }
+    }
+
+    /// A multi-paragraph paste becomes one block per paragraph.
+    private func paste(into block: BlockEntity, before: String,
+                       paragraphs: [String], after: String) async {
+        guard let domain = block.asDomain else { return }
+        let next = ordered.first { $0.orderKey > block.orderKey }?.orderKey
+        let landing = await repository.insertParagraphs(
+            into: domain, before: before, paragraphs: paragraphs,
+            after: after, nextOrderKey: next
+        )
+        focusedBlock = landing.blockId
+        caret = CaretRequest(blockId: landing.blockId, offset: landing.offset)
     }
 
     /// Backspace at the start: fold this block into the one above it.

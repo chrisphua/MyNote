@@ -24,6 +24,15 @@ version number so a bug report maps to one commit.
   block's type never changed. Changing a type now also hands the caret back,
   rather than ending the sentence.
 - **Android: a fresh install opens with the welcome note**, as on iOS.
+- **iOS: pasting a large chunk of text no longer locks the editor up.** A paste
+  of several paragraphs now becomes one block per paragraph, the way a block
+  editor should, instead of burying an entire article in a single block whose
+  text view had to lay every line of it out again on each keystroke. Typing
+  into a long note is roughly seven times cheaper than it was.
+- **iOS: a word can be inserted anywhere in a title.** The title was wired
+  straight to the store, so every keystroke was written, read back and handed
+  to the field again — which reset it and put the caret at the end. After
+  pasting a title, text could only be added after the last character.
 - **iPad: the note list is visible on launch.** In portrait the split view hid
   it, so a fresh install opened on an empty pane reading "Pick a note, or start
   a new one" with no list in sight. Showing the list also no longer slides it

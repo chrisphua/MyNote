@@ -87,6 +87,66 @@ struct NoteRepository {
         return tail.id
     }
 
+    /// A multi-paragraph paste: one block per paragraph.
+    ///
+    /// Pasting an article used to drop the whole thing into a single block.
+    /// A block's text view does not scroll — it grows to fit — so one block
+    /// holding thousands of words has to lay every line of it out again on each
+    /// keystroke, and the editor stops responding. Splitting on paste is also
+    /// simply what a block editor is for: the paragraphs arrive as paragraphs,
+    /// each one movable and styleable on its own.
+    ///
+    /// - Returns: the id of the last block written, and the caret offset within
+    ///   it — the point where the pasted text ends and the block's old trailing
+    ///   text resumes.
+    func insertParagraphs(
+        into block: Block, before: String, paragraphs: [String], after: String,
+        nextOrderKey: String?
+    ) async -> (blockId: String, offset: Int) {
+        // A blank line between paragraphs is a separator, not a paragraph.
+        var texts = paragraphs.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
+        if texts.isEmpty { texts = [""] }
+
+        var head = block
+        head.content.text = before + texts[0]
+        await update(block: head)
+
+        guard texts.count > 1 else {
+            // One paragraph after all: nothing structural, just longer text.
+            let offset = head.content.text.count
+            if !after.isEmpty {
+                head.content.text += after
+                await update(block: head)
+            }
+            return (block.id, offset)
+        }
+
+        var previousKey = block.orderKey
+        var lastId = block.id
+        var lastOffset = head.content.text.count
+
+        for (index, text) in texts.dropFirst().enumerated() {
+            let isLast = index == texts.count - 2
+            let key = FractionalIndex.between(previousKey, nextOrderKey)
+            let body = isLast ? text + after : text
+            let paragraph = Block(
+                noteId: block.noteId,
+                orderKey: key,
+                // Pasted prose is prose. Carrying a heading or a code style
+                // across every pasted paragraph is never what was meant.
+                type: block.type.continuesOnSplit ? block.type : .paragraph,
+                content: BlockContent(text: body),
+                hlc: await coordinator.engine.stamp()
+            )
+            await write(paragraph.asChange())
+            previousKey = key
+            lastId = paragraph.id
+            if isLast { lastOffset = text.count }
+        }
+
+        return (lastId, lastOffset)
+    }
+
     /// Backspace at the start of a block: fold it into the one above.
     ///
     /// - Returns: the caret offset in the previous block, i.e. the join point.

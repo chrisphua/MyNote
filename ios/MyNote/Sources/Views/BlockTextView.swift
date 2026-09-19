@@ -42,6 +42,9 @@ struct BlockTextView: UIViewRepresentable {
     let onSplit: (String, String) -> Void
     /// Backspace was pressed with the caret at offset 0.
     let onMergeBackwards: () -> Void
+    /// Text containing line breaks arrived at once — a paste. Carries the text
+    /// either side of it and the paragraphs themselves.
+    let onPasteParagraphs: (String, [String], String) -> Void
 
     func makeUIView(context: Context) -> InterceptingTextView {
         let view = InterceptingTextView()
@@ -111,11 +114,25 @@ struct BlockTextView: UIViewRepresentable {
     }
 
     /// `sizeThatFits` is what lets the row grow as the text wraps.
+    ///
+    /// Cached, because the text view does not scroll — so measuring it lays out
+    /// every line of the block, and SwiftUI asks more than once per pass. On a
+    /// block holding a pasted article that measurement is the slow part of a
+    /// keystroke.
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: InterceptingTextView, context: Context) -> CGSize? {
         let width = proposal.width ?? uiView.bounds.width
         guard width > 0 else { return nil }
+
+        let current = uiView.text ?? ""
+        if let cached = context.coordinator.measured,
+           cached.width == width, cached.font == font, cached.text == current {
+            return CGSize(width: width, height: cached.height)
+        }
+
         let fitted = uiView.sizeThatFits(CGSize(width: width, height: .greatestFiniteMagnitude))
-        return CGSize(width: width, height: max(fitted.height, font.lineHeight))
+        let height = max(fitted.height, font.lineHeight)
+        context.coordinator.measured = (text: current, width: width, font: font, height: height)
+        return CGSize(width: width, height: height)
     }
 
     private func styled(_ value: String) -> NSAttributedString {
@@ -132,6 +149,8 @@ struct BlockTextView: UIViewRepresentable {
 
     final class Coordinator: NSObject, UITextViewDelegate {
         var parent: BlockTextView
+        /// Last measured height, keyed by what it was measured from.
+        var measured: (text: String, width: CGFloat, font: UIFont, height: CGFloat)?
 
         init(parent: BlockTextView) {
             self.parent = parent
@@ -161,6 +180,17 @@ struct BlockTextView: UIViewRepresentable {
             // Both paths are needed.
             if replacement.isEmpty, range.location == 0, range.length == 0 {
                 parent.onMergeBackwards()
+                return false
+            }
+
+            // More than one line arriving at once is a paste, not typing: make
+            // a block per paragraph instead of burying them all in this one.
+            if replacement.count > 1, replacement.contains("\n") {
+                let full = textView.text as NSString
+                let before = full.substring(to: range.location)
+                let after = full.substring(from: range.location + range.length)
+                let paragraphs = replacement.components(separatedBy: .newlines)
+                parent.onPasteParagraphs(before, paragraphs, after)
                 return false
             }
 

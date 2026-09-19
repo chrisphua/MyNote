@@ -11,6 +11,7 @@ struct BlockRowView: View {
     @Binding var caret: CaretRequest?
 
     let onCommit: (Block) -> Void
+    let onPasteParagraphs: (String, [String], String) -> Void
     /// Return pressed, carrying the text either side of the caret.
     let onSplit: (String, String) -> Void
     /// Backspace pressed with the caret at the very start.
@@ -21,6 +22,8 @@ struct BlockRowView: View {
     @Environment(ThemeManager.self) private var theme
     @State private var text: String = ""
     @State private var didLoad = false
+    /// Coalesces keystrokes into one write. See `commit(text:content:)`.
+    @State private var writeTask: Task<Void, Never>?
 
     private var isFocused: Bool { focusedBlockId == block.id }
     private var type: BlockType { BlockType(rawValue: block.type) ?? .paragraph }
@@ -61,6 +64,10 @@ struct BlockRowView: View {
 
             text = incoming
         }
+        .onChange(of: isFocused) { _, nowFocused in
+            if !nowFocused { flush() }
+        }
+        .onDisappear { flush() }
     }
 
     private var editableRow: some View {
@@ -78,7 +85,8 @@ struct BlockRowView: View {
                 tintColor: UIColor(theme.current.accentColor),
                 lineSpacing: theme.current.lineSpacing,
                 onSplit: onSplit,
-                onMergeBackwards: onMergeBackwards
+                onMergeBackwards: onMergeBackwards,
+                onPasteParagraphs: onPasteParagraphs
             )
             .onChange(of: text) { _, newValue in commit(text: newValue) }
         }
@@ -176,7 +184,39 @@ struct BlockRowView: View {
         }
     }
 
+    /// Saves the block, coalescing a run of keystrokes into one write.
+    ///
+    /// Writing on every keystroke meant that every character typed re-encoded
+    /// the whole block to JSON, wrote it to the store, and ran a pending-changes
+    /// query. That is unnoticeable in a one-line block and crippling in a large
+    /// one: after pasting an article into a block, a single keypress took the
+    /// best part of a second on a Mac, and far longer on a phone.
+    ///
+    /// The decode is inside the task for the same reason — it ran per keystroke
+    /// too, on the whole block.
+    ///
+    /// This still honours "an edit is saved locally and the user moves on": the
+    /// delay is shorter than a pause between words, and `flush()` forces the
+    /// write out the moment focus leaves the block or the row goes away, so no
+    /// edit can be left sitting in a timer.
     private func commit(text newText: String, content override: BlockContent? = nil) {
+        writeTask?.cancel()
+        writeTask = Task { @MainActor in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            write(text: newText, content: override)
+        }
+    }
+
+    /// Writes any coalesced edit immediately.
+    private func flush() {
+        guard let pending = writeTask else { return }
+        pending.cancel()
+        writeTask = nil
+        write(text: text)
+    }
+
+    private func write(text newText: String, content override: BlockContent? = nil) {
         guard var domain = block.asDomain else { return }
         var updated = override ?? domain.content
         updated.text = newText
