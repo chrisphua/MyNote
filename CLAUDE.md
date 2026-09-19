@@ -108,6 +108,20 @@ There is no build-time check; the vectors are the only guard.
   under a newer clock and the character is gone, locally and in the backup.
   Re-read the row inside the coroutine (`setBlockType`, `blockById`); launches on
   one dispatcher run in order, so the keystroke has landed by then.
+- **Anything bound straight to the store fights the person typing.** Every
+  field needs a local copy it owns while focused, adopting the store's value
+  only when focus leaves. The title was missed when the blocks were fixed, and
+  behaved exactly as the blocks used to: the caret jumped to the end on every
+  keystroke.
+- **A block's text view does not scroll, so its cost is its length.** Measuring
+  it lays out every line. One block holding a pasted article made a single
+  keypress take most of a second on a Mac, and far worse on a phone. A
+  multi-paragraph paste is therefore split into blocks, the block stack is
+  lazy, and writes are coalesced rather than made per keystroke.
+- **A lazy stack cannot give focus to a row it has not built.** True of
+  `LazyVStack` and `LazyColumn` alike: a split near the end of a long note
+  focuses nothing and types into the block above. Whatever aims the caret has
+  to scroll the target into view first. Both platforms now do.
 - **`uiautomator dump` only covers the app's own window.** A Compose
   `DropdownMenu` is a separate window and never appears in the dump, which reads
   exactly like a button that does not respond. Take a screenshot before
