@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import MyNoteCore
 
 /// Where the caret should land after a structural edit.
 struct CaretRequest: Equatable {
@@ -27,6 +28,8 @@ struct CaretRequest: Equatable {
 /// `TextField` also does not expose.
 struct BlockTextView: UIViewRepresentable {
     @Binding var text: String
+    /// Inline formatting over `text`, in UTF-16 offsets.
+    @Binding var spans: [Span]
     @Binding var focusedBlockId: String?
     @Binding var caret: CaretRequest?
 
@@ -45,6 +48,8 @@ struct BlockTextView: UIViewRepresentable {
     /// Text containing line breaks arrived at once — a paste. Carries the text
     /// either side of it and the paragraphs themselves.
     let onPasteParagraphs: (String, [String], String) -> Void
+    /// The selection moved, so the toolbar can show what is active.
+    let onSelectionChange: (NSRange) -> Void
 
     func makeUIView(context: Context) -> InterceptingTextView {
         let view = InterceptingTextView()
@@ -85,11 +90,25 @@ struct BlockTextView: UIViewRepresentable {
         if !ownsText, view.text != text {
             view.attributedText = styled(text)
             view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        } else if context.coordinator.appliedSpans != spans,
+                  view.markedTextRange == nil,
+                  view.text == text {
+            // The formatting changed under text that did not. The field owns its
+            // words while focused, but not their appearance — so this is pushed
+            // in, keeping the selection, or bolding a word would deselect it.
+            //
+            // Guarded on there being no marked text: replacing the contents
+            // mid-composition would throw away what an IME is in the middle of.
+            let selected = view.selectedRange
+            view.attributedText = styled(view.text)
+            view.selectedRange = selected
+            view.typingAttributes = typingAttributes(at: selected.location + selected.length)
         } else if view.font != font || view.textColor != textColor {
             let selected = view.selectedRange
             view.attributedText = styled(view.text)
             view.selectedRange = selected
         }
+        context.coordinator.appliedSpans = spans
 
         view.tintColor = tintColor
         view.placeholderLabel.text = placeholder
@@ -136,13 +155,72 @@ struct BlockTextView: UIViewRepresentable {
     }
 
     private func styled(_ value: String) -> NSAttributedString {
+        styled(value, spans: spans)
+    }
+
+    /// Builds the attributed text: the block's own font and colour, plus the
+    /// inline marks over the ranges that carry them.
+    private func styled(_ value: String, spans: [Span]) -> NSAttributedString {
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
-        return NSAttributedString(string: value, attributes: [
+
+        let result = NSMutableAttributedString(string: value, attributes: [
             .font: font,
             .foregroundColor: textColor,
             .paragraphStyle: paragraph,
         ])
+
+        let length = (value as NSString).length
+        for span in spans {
+            let location = max(0, span.start)
+            let end = min(length, span.end)
+            guard location < end else { continue }
+            result.addAttributes(attributes(for: Set(span.marks), link: span.link),
+                                 range: NSRange(location: location, length: end - location))
+        }
+        return result
+    }
+
+    /// The UIKit attributes for a set of marks.
+    func attributes(for marks: Set<Mark>, link: String?) -> [NSAttributedString.Key: Any] {
+        var attributes: [NSAttributedString.Key: Any] = [:]
+
+        var traits: UIFontDescriptor.SymbolicTraits = []
+        if marks.contains(.bold) { traits.insert(.traitBold) }
+        if marks.contains(.italic) { traits.insert(.traitItalic) }
+        if !traits.isEmpty,
+           let descriptor = font.fontDescriptor.withSymbolicTraits(traits) {
+            attributes[.font] = UIFont(descriptor: descriptor, size: font.pointSize)
+        }
+
+        if marks.contains(.underline) {
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if marks.contains(.strikethrough) {
+            attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
+        }
+        if link != nil {
+            // Shown as a link, not made tappable: a tap has to place the caret
+            // while the block is being edited.
+            attributes[.foregroundColor] = tintColor
+            attributes[.underlineStyle] = NSUnderlineStyle.single.rawValue
+        }
+        return attributes
+    }
+
+    /// What newly typed text should look like at the caret.
+    func typingAttributes(at location: Int) -> [NSAttributedString.Key: Any] {
+        let paragraph = NSMutableParagraphStyle()
+        paragraph.lineSpacing = lineSpacing
+        var base: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: textColor,
+            .paragraphStyle: paragraph,
+        ]
+        let marks = InlineSpans.marks(in: location..<location, spans: spans,
+                                      textLength: (text as NSString).length)
+        for (key, value) in attributes(for: marks, link: nil) { base[key] = value }
+        return base
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
@@ -151,6 +229,8 @@ struct BlockTextView: UIViewRepresentable {
         var parent: BlockTextView
         /// Last measured height, keyed by what it was measured from.
         var measured: (text: String, width: CGFloat, font: UIFont, height: CGFloat)?
+        /// The spans already rendered into the text view.
+        var appliedSpans: [Span] = []
 
         init(parent: BlockTextView) {
             self.parent = parent
@@ -159,6 +239,16 @@ struct BlockTextView: UIViewRepresentable {
         func textViewDidChange(_ textView: UITextView) {
             parent.text = textView.text
             (textView as? InterceptingTextView)?.placeholderLabel.isHidden = !textView.text.isEmpty
+        }
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            parent.onSelectionChange(textView.selectedRange)
+            // So the next character typed carries the marks at the caret rather
+            // than appearing plain until something forces a re-render.
+            guard textView.isFirstResponder else { return }
+            textView.typingAttributes = parent.typingAttributes(
+                at: textView.selectedRange.location + textView.selectedRange.length
+            )
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
@@ -197,7 +287,23 @@ struct BlockTextView: UIViewRepresentable {
             // Return splits the block rather than inserting a newline. A block
             // editor has no use for a line break inside a paragraph — that is
             // what the next block is for.
-            guard replacement == "\n" else { return true }
+            guard replacement == "\n" else {
+                // The edit is going ahead, so the formatting has to move with
+                // it. Only on this path: the split and paste branches above
+                // return false and are rearranged by the editor instead, which
+                // slices the spans itself.
+                //
+                // This is also the only place that sees the edit rather than
+                // its result — `textViewDidChange` is handed the new text with
+                // no idea what was replaced.
+                parent.spans = InlineSpans.adjusted(
+                    parent.spans,
+                    textLength: (textView.text as NSString).length,
+                    replacing: range.location..<(range.location + range.length),
+                    withLength: (replacement as NSString).length
+                )
+                return true
+            }
 
             let full = textView.text as NSString
             let before = full.substring(to: range.location)

@@ -70,9 +70,26 @@ struct NoteRepository {
     @discardableResult
     func splitBlock(_ block: Block, before: String, after: String,
                     nextOrderKey: String?) async -> String {
+        // Formatting goes with the words. The offsets are worked out from the
+        // original text rather than from `before` and `after` alone, because a
+        // Return pressed over a selection deletes the middle — so the tail does
+        // not start where the head ends.
+        let originalLength = (block.content.text as NSString).length
+        let headLength = (before as NSString).length
+        let tailStart = originalLength - (after as NSString).length
+        let originalSpans = block.content.inlineSpans
+
         var head = block
         head.content.text = before
+        head.content.inlineSpans = InlineSpans.slice(
+            originalSpans, textLength: originalLength, range: 0..<headLength
+        )
         await update(block: head)
+
+        var tailContent = BlockContent(text: after)
+        tailContent.inlineSpans = InlineSpans.slice(
+            originalSpans, textLength: originalLength, range: tailStart..<originalLength
+        )
 
         let tail = Block(
             noteId: block.noteId,
@@ -80,7 +97,7 @@ struct NoteRepository {
             // A list carries on as a list; a heading does not, because the line
             // after a heading is almost never another heading.
             type: block.type.continuesOnSplit ? block.type : .paragraph,
-            content: BlockContent(text: after),
+            content: tailContent,
             hlc: await coordinator.engine.stamp()
         )
         await write(tail.asChange())
@@ -107,15 +124,33 @@ struct NoteRepository {
         var texts = paragraphs.filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }
         if texts.isEmpty { texts = [""] }
 
+        // The text either side of the caret keeps its formatting; the pasted
+        // text itself arrives plain.
+        let originalLength = (block.content.text as NSString).length
+        let originalSpans = block.content.inlineSpans
+        let beforeLength = (before as NSString).length
+        let afterStart = originalLength - (after as NSString).length
+        let beforeSpans = InlineSpans.slice(
+            originalSpans, textLength: originalLength, range: 0..<beforeLength
+        )
+        let afterSpans = InlineSpans.slice(
+            originalSpans, textLength: originalLength, range: afterStart..<originalLength
+        )
+
         var head = block
         head.content.text = before + texts[0]
+        head.content.inlineSpans = beforeSpans
         await update(block: head)
 
         guard texts.count > 1 else {
             // One paragraph after all: nothing structural, just longer text.
-            let offset = head.content.text.count
+            let offset = (head.content.text as NSString).length
             if !after.isEmpty {
                 head.content.text += after
+                head.content.inlineSpans = InlineSpans.concatenated(
+                    beforeSpans, firstLength: offset,
+                    afterSpans, secondLength: (after as NSString).length
+                )
                 await update(block: head)
             }
             return (block.id, offset)
@@ -123,25 +158,35 @@ struct NoteRepository {
 
         var previousKey = block.orderKey
         var lastId = block.id
-        var lastOffset = head.content.text.count
+        var lastOffset = (head.content.text as NSString).length
 
         for (index, text) in texts.dropFirst().enumerated() {
             let isLast = index == texts.count - 2
             let key = FractionalIndex.between(previousKey, nextOrderKey)
             let body = isLast ? text + after : text
+
+            var paragraphContent = BlockContent(text: body)
+            if isLast, !after.isEmpty {
+                // The trailing text that was pushed down keeps its formatting.
+                paragraphContent.inlineSpans = InlineSpans.concatenated(
+                    [], firstLength: (text as NSString).length,
+                    afterSpans, secondLength: (after as NSString).length
+                )
+            }
+
             let paragraph = Block(
                 noteId: block.noteId,
                 orderKey: key,
                 // Pasted prose is prose. Carrying a heading or a code style
                 // across every pasted paragraph is never what was meant.
                 type: block.type.continuesOnSplit ? block.type : .paragraph,
-                content: BlockContent(text: body),
+                content: paragraphContent,
                 hlc: await coordinator.engine.stamp()
             )
             await write(paragraph.asChange())
             previousKey = key
             lastId = paragraph.id
-            if isLast { lastOffset = text.count }
+            if isLast { lastOffset = (text as NSString).length }
         }
 
         return (lastId, lastOffset)
@@ -156,7 +201,13 @@ struct NoteRepository {
 
         if !block.content.text.isEmpty {
             var merged = previous
+            let previousLength = (previous.content.text as NSString).length
+            let blockLength = (block.content.text as NSString).length
             merged.content.text += block.content.text
+            merged.content.inlineSpans = InlineSpans.concatenated(
+                previous.content.inlineSpans, firstLength: previousLength,
+                block.content.inlineSpans, secondLength: blockLength
+            )
             await update(block: merged)
         }
         await deleteBlock(block.id)
