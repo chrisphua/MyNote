@@ -98,18 +98,16 @@ private struct NoteRow: View {
     @Environment(ThemeManager.self) private var theme
 
     var body: some View {
-        HStack(spacing: 10) {
-            Text(note.icon ?? "📄").font(.system(size: 18))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(note.title.isEmpty ? "Untitled" : note.title)
-                    .font(theme.current.font(.body))
-                    .foregroundStyle(theme.current.textPrimary)
-                    .lineLimit(1)
-                Text(note.updatedAt, format: .relative(presentation: .named))
-                    .font(theme.current.font(.caption))
-                    .foregroundStyle(theme.current.textSecondary)
-            }
+        VStack(alignment: .leading, spacing: 2) {
+            Text(note.title.isEmpty ? "Untitled" : note.title)
+                .font(theme.current.font(.body))
+                .foregroundStyle(theme.current.textPrimary)
+                .lineLimit(1)
+            Text(note.updatedAt, format: .relative(presentation: .named))
+                .font(theme.current.font(.caption))
+                .foregroundStyle(theme.current.textSecondary)
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.vertical, 2)
     }
 }

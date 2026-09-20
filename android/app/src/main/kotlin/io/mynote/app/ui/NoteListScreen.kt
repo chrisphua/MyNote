@@ -175,8 +175,6 @@ private fun NoteListRow(
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Text(note.icon ?: "📄", fontSize = metrics.baseSize)
-        Spacer(Modifier.width(10.dp))
         Column(Modifier.weight(1f)) {
             Text(
                 note.title.ifBlank { "Untitled" },
