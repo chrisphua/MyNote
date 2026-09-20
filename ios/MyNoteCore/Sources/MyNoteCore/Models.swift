@@ -89,13 +89,29 @@ public struct BlockContent: Codable, Equatable, Sendable {
     public var checked: Bool?
     public var language: String?
     public var attachmentId: String?
+    /// Inline formatting over `text`, in UTF-16 offsets. See `InlineSpans`.
+    ///
+    /// Optional, and absent when there is none — so a client built before
+    /// inline formatting existed reads the block, ignores the field it does not
+    /// know, and still shows the right words. It would drop the formatting on
+    /// its next write, which is the accepted cost of having no server to
+    /// coordinate a rollout.
+    public var spans: [Span]?
 
     public init(text: String = "", checked: Bool? = nil,
-                language: String? = nil, attachmentId: String? = nil) {
+                language: String? = nil, attachmentId: String? = nil,
+                spans: [Span]? = nil) {
         self.text = text
         self.checked = checked
         self.language = language
         self.attachmentId = attachmentId
+        self.spans = spans
+    }
+
+    /// Formatting, normalised against the current text.
+    public var inlineSpans: [Span] {
+        get { InlineSpans.normalized(spans ?? [], textLength: text.utf16.count) }
+        set { spans = newValue.isEmpty ? nil : newValue }
     }
 
     public func encoded() -> String {
