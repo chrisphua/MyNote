@@ -24,6 +24,8 @@ version number so a bug report maps to one commit.
   block's type never changed. Changing a type now also hands the caret back,
   rather than ending the sentence.
 - **Android: a fresh install opens with the welcome note**, as on iOS.
+- **The note list is just titles.** The page glyph beside every title is gone;
+  it was the same icon on every row and said nothing about the note.
 - **Inline formatting.** Bold, italic, underline, strikethrough and links can
   be applied to part of a line rather than to a whole block, from a bar above
   the keyboard that shows what the selection already carries. Formatting
