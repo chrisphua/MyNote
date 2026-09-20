@@ -56,6 +56,7 @@ There is no build-time check; the vectors are the only guard.
 | Merge loop | `FolderSync.swift` | `FolderSync.kt` |
 | Purchase hand-off | `License.swift` | `License.kt` |
 | Theme model | `ThemeSpec.swift` | `ThemeSpec.kt` |
+| Inline formatting | `InlineSpans.swift` | `InlineSpans.kt` |
 
 ## Traps that have already caused bugs
 
@@ -114,6 +115,15 @@ There is no build-time check; the vectors are the only guard.
   `String.count` is grapheme clusters and is the wrong measure. Ranges are
   half-open on both sides; Kotlin's `IntRange` is inclusive, so the Kotlin API
   takes explicit `from`/`to` rather than a range.
+- **Compose reports the result of an edit, not the edit.** UIKit hands iOS the
+  replaced range before it happens; `onValueChange` hands Android the finished
+  string. `InlineSpans.editBetween` recovers the edit by matching the common
+  prefix and suffix, which is exact for everything a keyboard does. It is the
+  one piece of the core with no Swift twin, deliberately.
+- **A Compose text field's value carries the styling, but an edit comes back
+  plain.** The spans are the record; the `AnnotatedString` is rebuilt from them
+  on every change. Styling stored on the field itself is lost the moment
+  someone types.
 - **Formatting is not text, and the ownership rule is about text.** A field
   owns its words while focused, but a toolbar press changes only their
   appearance — so spans are adopted from the store even while focused, provided

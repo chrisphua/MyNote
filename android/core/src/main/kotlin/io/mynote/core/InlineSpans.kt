@@ -246,5 +246,48 @@ object InlineSpans {
         return normalized(first + shifted, firstLength + secondLength)
     }
 
+    /**
+     * The edit between two versions of a string: what was replaced, and with
+     * how much.
+     *
+     * Android-only, and deliberately has no Swift twin. UIKit hands iOS the
+     * replaced range before the edit happens; Compose hands Android the
+     * finished string and nothing else, so the edit has to be recovered by
+     * comparing. Matching the common prefix and suffix recovers it exactly for
+     * every edit a keyboard makes — typing, deleting, replacing a selection,
+     * autocorrect swapping a word.
+     *
+     * @return the replaced range as `[from, to)` in the old string, and the
+     *   length of what replaced it.
+     */
+    fun editBetween(old: String, new: String): Edit {
+        if (old == new) return Edit(old.length, old.length, 0)
+
+        var prefix = 0
+        val maxPrefix = minOf(old.length, new.length)
+        while (prefix < maxPrefix && old[prefix] == new[prefix]) prefix++
+
+        var suffix = 0
+        val maxSuffix = minOf(old.length - prefix, new.length - prefix)
+        while (
+            suffix < maxSuffix &&
+            old[old.length - 1 - suffix] == new[new.length - 1 - suffix]
+        ) suffix++
+
+        return Edit(
+            from = prefix,
+            to = old.length - suffix,
+            newLength = new.length - prefix - suffix,
+        )
+    }
+
+    data class Edit(val from: Int, val to: Int, val newLength: Int)
+
+    /** [adjusted], for a Compose field that only reports the finished text. */
+    fun adjustedForEdit(spans: List<Span>, old: String, new: String): List<Span> {
+        val edit = editBetween(old, new)
+        return adjusted(spans, old.length, edit.from, edit.to, edit.newLength)
+    }
+
     // endregion
 }
