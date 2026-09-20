@@ -8,11 +8,17 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.FormatListBulleted
+import androidx.compose.material.icons.filled.FormatBold
+import androidx.compose.material.icons.filled.FormatItalic
+import androidx.compose.material.icons.filled.FormatStrikethrough
+import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
 import androidx.compose.material.icons.filled.FormatQuote
@@ -34,6 +40,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import io.mynote.app.theme.LocalMyNoteColors
 import io.mynote.core.BlockType
+import io.mynote.core.Mark
 
 /**
  * The formatting controls above the keyboard.
@@ -44,6 +51,9 @@ import io.mynote.core.BlockType
 @Composable
 fun BlockFormatBar(
     current: BlockType,
+    /** Marks the whole selection carries, shown as active. */
+    activeMarks: Set<Mark>,
+    onToggleMark: (Mark) -> Unit,
     onSelect: (BlockType) -> Unit,
     onDone: () -> Unit,
 ) {
@@ -61,6 +71,15 @@ fun BlockFormatBar(
         BlockType.DIVIDER to Icons.Default.HorizontalRule,
     )
 
+    // Inline marks come first: they are what gets pressed mid-sentence, and they
+    // act on the selection rather than on the whole block.
+    val marks = listOf(
+        Mark.BOLD to Icons.Default.FormatBold,
+        Mark.ITALIC to Icons.Default.FormatItalic,
+        Mark.UNDERLINE to Icons.Default.FormatUnderlined,
+        Mark.STRIKETHROUGH to Icons.Default.FormatStrikethrough,
+    )
+
     Box(Modifier.fillMaxWidth().background(colors.surface)) {
         HorizontalDivider(color = colors.border)
         Row(
@@ -74,6 +93,14 @@ fun BlockFormatBar(
                     .padding(horizontal = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(2.dp),
             ) {
+                for ((mark, icon) in marks) {
+                    MarkButton(mark, icon, selected = mark in activeMarks) { onToggleMark(mark) }
+                }
+
+                Spacer(Modifier.width(4.dp))
+                Box(Modifier.width(1.dp).height(24.dp).background(colors.border))
+                Spacer(Modifier.width(4.dp))
+
                 for ((type, icon) in items) {
                     FormatButton(type, icon, selected = type == current) { onSelect(type) }
                 }
@@ -102,3 +129,32 @@ private fun FormatButton(
         Icon(icon, null, tint = if (selected) colors.accent else colors.textSecondary)
     }
 }
+
+
+@Composable
+private fun MarkButton(
+    mark: Mark,
+    icon: ImageVector,
+    selected: Boolean,
+    onClick: () -> Unit,
+) {
+    val colors = LocalMyNoteColors.current
+    IconButton(
+        onClick = onClick,
+        modifier = Modifier
+            .size(40.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(if (selected) colors.accent.copy(alpha = 0.18f) else colors.surface)
+            .semantics { contentDescription = mark.label },
+    ) {
+        Icon(icon, null, tint = if (selected) colors.accent else colors.textSecondary)
+    }
+}
+
+val Mark.label: String
+    get() = when (this) {
+        Mark.BOLD -> "Bold"
+        Mark.ITALIC -> "Italic"
+        Mark.UNDERLINE -> "Underline"
+        Mark.STRIKETHROUGH -> "Strikethrough"
+    }

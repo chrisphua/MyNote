@@ -267,4 +267,55 @@ class InlineSpansTest {
     }
 
     // endregion
+
+    // region Recovering an edit (Android)
+
+    @Test
+    fun `a character typed at the end is seen as an insertion there`() {
+        val edit = InlineSpans.editBetween("hello", "hellox")
+        assertEquals(InlineSpans.Edit(5, 5, 1), edit)
+    }
+
+    @Test
+    fun `a character typed in the middle is located exactly`() {
+        val edit = InlineSpans.editBetween("hello", "helXlo")
+        assertEquals(InlineSpans.Edit(3, 3, 1), edit)
+    }
+
+    @Test
+    fun `a deletion is seen as a replacement by nothing`() {
+        val edit = InlineSpans.editBetween("hello", "helo")
+        assertEquals(InlineSpans.Edit(3, 4, 0), edit)
+    }
+
+    @Test
+    fun `replacing a selection is one edit`() {
+        val edit = InlineSpans.editBetween("hello world", "hello there")
+        assertEquals(InlineSpans.Edit(6, 11, 5), edit)
+    }
+
+    @Test
+    fun `no change is no edit`() {
+        assertEquals(InlineSpans.Edit(5, 5, 0), InlineSpans.editBetween("hello", "hello"))
+    }
+
+    @Test
+    fun `typing at the end of a bold word keeps it bold, via the diff`() {
+        val spans = listOf(Span.of(0, 5, listOf(Mark.BOLD)))
+        assertEquals(
+            listOf(Span.of(0, 6, listOf(Mark.BOLD))),
+            InlineSpans.adjustedForEdit(spans, "hello", "hellox"),
+        )
+    }
+
+    @Test
+    fun `typing before a bold word leaves it plain, via the diff`() {
+        val spans = listOf(Span.of(0, 5, listOf(Mark.BOLD)))
+        assertEquals(
+            listOf(Span.of(1, 5, listOf(Mark.BOLD))),
+            InlineSpans.adjustedForEdit(spans, "hello", "xhello"),
+        )
+    }
+
+    // endregion
 }

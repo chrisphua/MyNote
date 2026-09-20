@@ -7,6 +7,7 @@ import io.mynote.core.BlockType
 import io.mynote.core.Change
 import io.mynote.core.Entity
 import io.mynote.core.FractionalIndex
+import io.mynote.core.InlineSpans
 import io.mynote.core.Note
 import io.mynote.core.WelcomeNote
 import io.mynote.core.ThemeSpec
@@ -84,7 +85,20 @@ class NoteRepository(
         after: String,
         nextOrderKey: String?,
     ): String {
-        update(block.copy(content = block.content.copy(text = before)))
+        // Formatting goes with the words. The offsets come from the original
+        // text rather than from `before` and `after` alone, because a Return
+        // pressed over a selection deletes the middle — so the tail does not
+        // start where the head ends.
+        val originalText = block.content.text
+        val originalSpans = block.content.inlineSpans
+        val tailStart = originalText.length - after.length
+
+        update(
+            block.copy(
+                content = block.content.copy(text = before)
+                    .withSpans(InlineSpans.slice(originalSpans, originalText.length, 0, before.length))
+            )
+        )
 
         val tail = Block(
             id = UUID.randomUUID().toString(),
@@ -93,7 +107,9 @@ class NoteRepository(
             // A list carries on as a list; a heading does not, because the line
             // after a heading is almost never another heading.
             type = if (block.type.continuesOnSplit) block.type else BlockType.PARAGRAPH,
-            content = BlockContent(text = after),
+            content = BlockContent(text = after).withSpans(
+                InlineSpans.slice(originalSpans, originalText.length, tailStart, originalText.length)
+            ),
             hlc = coordinator.engine.stamp(),
         )
         write(tail.asChange())
@@ -109,7 +125,17 @@ class NoteRepository(
         val joinOffset = previous.content.text.length
 
         if (block.content.text.isNotEmpty()) {
-            update(previous.copy(content = previous.content.copy(text = previous.content.text + block.content.text)))
+            val joined = previous.content.text + block.content.text
+            update(
+                previous.copy(
+                    content = previous.content.copy(text = joined).withSpans(
+                        InlineSpans.concatenated(
+                            previous.content.inlineSpans, previous.content.text.length,
+                            block.content.inlineSpans, block.content.text.length,
+                        )
+                    )
+                )
+            )
         }
         deleteBlock(block.id)
         return joinOffset

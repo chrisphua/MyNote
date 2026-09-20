@@ -56,13 +56,19 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.font.FontStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.input.TextFieldValue
@@ -74,6 +80,9 @@ import io.mynote.app.theme.LocalMyNoteMetrics
 import io.mynote.core.Block
 import io.mynote.core.BlockContent
 import io.mynote.core.BlockType
+import io.mynote.core.InlineSpans
+import io.mynote.core.Mark
+import io.mynote.core.Span
 import kotlinx.coroutines.launch
 
 /**
@@ -114,6 +123,9 @@ fun NoteEditorScreen(
     // block is only half the behaviour; without this the caret stayed in the
     // block above and the next keystroke went to the wrong one.
     var caret by remember(noteId) { mutableStateOf<CaretRequest?>(null) }
+    // The selection inside the active block, in UTF-16 offsets — what the mark
+    // buttons act on and what decides which of them look active.
+    var selection by remember(noteId) { mutableStateOf(0 to 0) }
     val focusManager = LocalFocusManager.current
     val listState = rememberLazyListState()
 
@@ -180,8 +192,32 @@ fun NoteEditorScreen(
         bottomBar = {
             val active = ordered.firstOrNull { it.id == activeBlockId }
             if (active != null) {
+                val activeContent = BlockContent.decode(active.content)
+                val activeMarks = InlineSpans.marks(
+                    selection.first, selection.second,
+                    activeContent.inlineSpans, activeContent.text.length,
+                )
                 BlockFormatBar(
                     current = BlockType.fromWire(active.type) ?: BlockType.PARAGRAPH,
+                    activeMarks = activeMarks,
+                    onToggleMark = { mark ->
+                        val length = activeContent.text.length
+                        val from = selection.first.coerceIn(0, length)
+                        val to = selection.second.coerceIn(from, length)
+                        // Nothing selected, nothing to mark.
+                        if (from < to) {
+                            scope.launch {
+                                val updated = InlineSpans.toggle(
+                                    mark, from, to, activeContent.inlineSpans, length,
+                                )
+                                container.repository.blockById(active.id)?.let { fresh ->
+                                    container.repository.update(
+                                        fresh.copy(content = fresh.content.withSpans(updated))
+                                    )
+                                }
+                            }
+                        }
+                    },
                     onSelect = { type ->
                         scope.launch {
                             container.repository.setBlockType(active.id, type)
@@ -281,6 +317,7 @@ fun NoteEditorScreen(
                             }
                         },
                         onFocusChange = { focused -> if (focused) activeBlockId = row.id },
+                        onSelectionChange = { start, end -> selection = start to end },
                         onDelete = {
                             // Never leave a note with zero blocks — there would
                             // be nowhere to type.
@@ -355,6 +392,7 @@ private fun BlockEditor(
     // Backspace pressed with the caret at the very start.
     onMergeBackwards: () -> Unit,
     onFocusChange: (Boolean) -> Unit,
+    onSelectionChange: (Int, Int) -> Unit,
     onDelete: () -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
@@ -366,6 +404,7 @@ private fun BlockEditor(
     // whether backspace deletes a character or folds this block into the one
     // above, and a plain String does not carry it.
     var field by remember(row.id) { mutableStateOf(TextFieldValue(content.text)) }
+    var spans by remember(row.id) { mutableStateOf(content.inlineSpans) }
     val text = field.text
     var menuOpen by remember { mutableStateOf(false) }
     var isFocused by remember(row.id) { mutableStateOf(false) }
@@ -401,13 +440,30 @@ private fun BlockEditor(
         // — folding the block below into this one — therefore cannot arrive
         // this way. It arrives in the caret request instead, which carries the
         // text with it and does not depend on when the store catches up.
-        val incoming = BlockContent.decode(row.content).text
-        if (!isFocused && incoming != field.text) {
+        val decoded = BlockContent.decode(row.content)
+        val incoming = decoded.text
+
+        // Formatting is not text. A toolbar press changes how the words look
+        // and leaves the words alone, and the ownership rule below exists to
+        // protect the words — so when the text matches, the formatting is safe
+        // to take even while this block is being edited.
+        if (incoming == field.text) {
+            if (decoded.inlineSpans != spans) spans = decoded.inlineSpans
+            return@LaunchedEffect
+        }
+
+        if (!isFocused) {
             field = field.copy(text = incoming)
+            spans = decoded.inlineSpans
         }
     }
 
-    fun emit(newText: String = text, newContent: BlockContent = content, newType: BlockType = type) {
+    fun emit(
+        newText: String = text,
+        newContent: BlockContent = content,
+        newType: BlockType = type,
+        newSpans: List<Span> = spans,
+    ) {
         onChange(
             Block(
                 id = row.id,
@@ -415,7 +471,8 @@ private fun BlockEditor(
                 parentId = row.parentId,
                 orderKey = row.orderKey,
                 type = newType,
-                content = newContent.copy(text = newText),
+                content = newContent.copy(text = newText)
+                    .withSpans(InlineSpans.normalized(newSpans, newText.length)),
                 hlc = row.hlc,
             )
         )
@@ -469,7 +526,10 @@ private fun BlockEditor(
                 )
             }
             BasicTextField(
-                value = field,
+                // Styled on the way in, plain on the way out: Compose reports an
+                // edit as a plain string, so the spans are the record and this
+                // is only how they look.
+                value = field.copy(annotatedString = annotated(field.text, spans, colors.accent)),
                 onValueChange = { newValue ->
                     // Return splits the block rather than inserting a newline. A
                     // block editor has no use for a line break inside a
@@ -492,10 +552,17 @@ private fun BlockEditor(
                         // this the block would keep showing the whole pre-split
                         // string until the note was reopened.
                         field = TextFieldValue(head, TextRange(head.length))
+                        spans = InlineSpans.slice(spans, text.length, 0, head.length)
                         onSplit(head, newValue.text.substring(newline + 1))
                     } else {
+                        // Compose hands back the finished text and not the edit,
+                        // so the edit is recovered by comparing — that is what
+                        // keeps a bold run bold as the words around it change.
+                        val moved = InlineSpans.adjustedForEdit(spans, field.text, newValue.text)
                         field = newValue
-                        emit(newText = newValue.text)
+                        spans = moved
+                        onSelectionChange(newValue.selection.start, newValue.selection.end)
+                        emit(newText = newValue.text, newSpans = moved)
                     }
                 },
                 textStyle = TextStyle(
@@ -512,6 +579,7 @@ private fun BlockEditor(
                     .onFocusChanged {
                         isFocused = it.isFocused
                         onFocusChange(it.isFocused)
+                        if (it.isFocused) onSelectionChange(field.selection.start, field.selection.end)
                     }
                     // Backspace with the caret at the very start folds this block
                     // into the one above. When the field is empty there is nothing
@@ -624,6 +692,44 @@ private fun fontSizeFor(type: BlockType, base: androidx.compose.ui.unit.TextUnit
     BlockType.HEADING3 -> base * 1.15f
     BlockType.CODE -> base * 0.92f
     else -> base
+}
+
+/**
+ * The block's text with its inline formatting applied.
+ *
+ * Rebuilt on each change rather than kept in the field: Compose hands an edit
+ * back as plain text, so any styling carried on the value itself is lost the
+ * moment someone types. The spans are the record; this is just how they look.
+ */
+private fun annotated(text: String, spans: List<Span>, linkColor: Color): AnnotatedString =
+    AnnotatedString.Builder(text).apply {
+        for (span in spans) {
+            val start = span.start.coerceIn(0, text.length)
+            val end = span.end.coerceIn(start, text.length)
+            if (start >= end) continue
+            addStyle(
+                SpanStyle(
+                    fontWeight = if (Mark.BOLD in span.marks) FontWeight.Bold else null,
+                    fontStyle = if (Mark.ITALIC in span.marks) FontStyle.Italic else null,
+                    color = if (span.link != null) linkColor else Color.Unspecified,
+                    textDecoration = decorationFor(span),
+                ),
+                start,
+                end,
+            )
+        }
+    }.toAnnotatedString()
+
+private fun decorationFor(span: Span): TextDecoration? {
+    val lines = buildList {
+        if (Mark.UNDERLINE in span.marks || span.link != null) add(TextDecoration.Underline)
+        if (Mark.STRIKETHROUGH in span.marks) add(TextDecoration.LineThrough)
+    }
+    return when {
+        lines.isEmpty() -> null
+        lines.size == 1 -> lines.first()
+        else -> TextDecoration.combine(lines)
+    }
 }
 
 /** The stored row as the domain type the repository works in. */
