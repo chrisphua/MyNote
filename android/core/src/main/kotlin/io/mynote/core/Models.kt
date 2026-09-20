@@ -111,8 +111,24 @@ data class BlockContent(
     val checked: Boolean? = null,
     val language: String? = null,
     val attachmentId: String? = null,
+    /**
+     * Inline formatting over [text], in UTF-16 offsets. See [InlineSpans].
+     *
+     * Absent when there is none, so a client built before inline formatting
+     * existed reads the block, ignores the field it does not know, and still
+     * shows the right words. It would drop the formatting on its next write,
+     * which is the accepted cost of having no server to coordinate a rollout.
+     */
+    val spans: List<Span>? = null,
 ) {
     fun encoded(): String = MyNoteJson.encodeToString(serializer(), this)
+
+    /** Formatting, normalised against the current text. */
+    val inlineSpans: List<Span>
+        get() = InlineSpans.normalized(spans ?: emptyList(), text.length)
+
+    fun withSpans(updated: List<Span>): BlockContent =
+        copy(spans = updated.ifEmpty { null })
 
     companion object {
         fun decode(raw: String): BlockContent =
