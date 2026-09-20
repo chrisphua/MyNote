@@ -29,6 +29,10 @@ struct NoteEditorView: View {
     @State private var titleWriteTask: Task<Void, Never>?
     @FocusState private var titleFocused: Bool
 
+    /// The selection inside the focused block, in UTF-16 offsets — what the
+    /// mark buttons act on and what decides which of them look active.
+    @State private var selection = NSRange(location: 0, length: 0)
+
     init(noteId: String) {
         self.noteId = noteId
         _notes = Query(filter: #Predicate<NoteEntity> { $0.id == noteId })
@@ -69,6 +73,7 @@ struct NoteEditorView: View {
                         focusedBlockId: $focusedBlock,
                         caret: $caret,
                         onCommit: { updated in Task { await repository.update(block: updated) } },
+                        onSelectionChange: { selection = $0 },
                         onPasteParagraphs: { before, paragraphs, after in
                             Task { await paste(into: block, before: before,
                                                paragraphs: paragraphs, after: after) }
@@ -114,7 +119,9 @@ struct NoteEditorView: View {
             if let id = focusedBlock, let block = ordered.first(where: { $0.id == id }) {
                 BlockFormatBar(
                     current: BlockType(rawValue: block.type) ?? .paragraph,
+                    activeMarks: activeMarks(in: block),
                     onSelect: { type in Task { await changeType(block, to: type) } },
+                    onToggleMark: { mark in toggle(mark, in: block) },
                     onDone: { focusedBlock = nil }
                 )
             }
@@ -211,6 +218,33 @@ struct NoteEditorView: View {
     /// mistake; here it fails quietly, which is worse.
     private func textBlock(above block: BlockEntity) -> BlockEntity? {
         ordered.last { $0.orderKey < block.orderKey && $0.type != BlockType.divider.rawValue }
+    }
+
+    /// Marks the whole selection carries — what the toolbar shows as active.
+    private func activeMarks(in block: BlockEntity) -> Set<Mark> {
+        let content = BlockContent.decode(block.content)
+        let length = (content.text as NSString).length
+        let lower = min(max(0, selection.location), length)
+        let upper = min(lower + max(0, selection.length), length)
+        return InlineSpans.marks(in: lower..<upper, spans: content.inlineSpans, textLength: length)
+    }
+
+    /// Turns a mark on or off across the selection.
+    ///
+    /// Written to the store; the row picks the new spans up from there, which
+    /// it accepts even while focused because the words are unchanged.
+    private func toggle(_ mark: Mark, in block: BlockEntity) {
+        guard var domain = block.asDomain else { return }
+        let length = (domain.content.text as NSString).length
+        let lower = min(max(0, selection.location), length)
+        let upper = min(lower + max(0, selection.length), length)
+        guard lower < upper else { return }   // nothing selected, nothing to mark
+
+        domain.content.inlineSpans = InlineSpans.toggle(
+            mark, in: lower..<upper,
+            spans: domain.content.inlineSpans, textLength: length
+        )
+        Task { await repository.update(block: domain) }
     }
 
     /// A multi-paragraph paste becomes one block per paragraph.

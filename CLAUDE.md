@@ -108,6 +108,17 @@ There is no build-time check; the vectors are the only guard.
   under a newer clock and the character is gone, locally and in the backup.
   Re-read the row inside the coroutine (`setBlockType`, `blockById`); launches on
   one dispatcher run in order, so the keystroke has landed by then.
+- **Inline formatting offsets are UTF-16 code units.** Not characters. Both
+  platforms' text machinery counts that way already, so anything else means
+  converting on every keystroke and getting it wrong around emoji — Swift's
+  `String.count` is grapheme clusters and is the wrong measure. Ranges are
+  half-open on both sides; Kotlin's `IntRange` is inclusive, so the Kotlin API
+  takes explicit `from`/`to` rather than a range.
+- **Formatting is not text, and the ownership rule is about text.** A field
+  owns its words while focused, but a toolbar press changes only their
+  appearance — so spans are adopted from the store even while focused, provided
+  the text matches. Blocking them made the bold button light up and change
+  nothing on screen.
 - **Anything bound straight to the store fights the person typing.** Every
   field needs a local copy it owns while focused, adopting the store's value
   only when focus leaves. The title was missed when the blocks were fixed, and

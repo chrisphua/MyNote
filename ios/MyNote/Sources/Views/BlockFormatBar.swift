@@ -13,7 +13,10 @@ import MyNoteCore
 /// be driven by the same focus state as everything else.
 struct BlockFormatBar: View {
     let current: BlockType
+    /// Marks the whole selection carries, shown as active.
+    let activeMarks: Set<Mark>
     let onSelect: (BlockType) -> Void
+    let onToggleMark: (Mark) -> Void
     let onDone: () -> Void
 
     @Environment(ThemeManager.self) private var theme
@@ -25,10 +28,42 @@ struct BlockFormatBar: View {
         .bullet, .numbered, .todo, .quote, .code, .divider,
     ]
 
+    /// Inline marks come first: they are what gets pressed mid-sentence, and
+    /// they act on the selection rather than on the whole block.
+    private static let marks: [(Mark, String)] = [
+        (.bold, "bold"),
+        (.italic, "italic"),
+        (.underline, "underline"),
+        (.strikethrough, "strikethrough"),
+    ]
+
     var body: some View {
         HStack(spacing: 0) {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 4) {
+                    ForEach(Self.marks, id: \.0) { mark, symbol in
+                        Button {
+                            onToggleMark(mark)
+                        } label: {
+                            Image(systemName: symbol)
+                                .font(.system(size: 17, weight: .medium))
+                                .frame(width: 40, height: 36)
+                                .background(
+                                    RoundedRectangle(cornerRadius: 8)
+                                        .fill(activeMarks.contains(mark)
+                                              ? theme.current.accentColor.opacity(0.18)
+                                              : .clear)
+                                )
+                                .foregroundStyle(activeMarks.contains(mark)
+                                                 ? theme.current.accentColor
+                                                 : theme.current.textSecondary)
+                        }
+                        .accessibilityLabel(mark.label)
+                        .accessibilityAddTraits(activeMarks.contains(mark) ? [.isSelected] : [])
+                    }
+
+                    Divider().frame(height: 24).padding(.horizontal, 4)
+
                     ForEach(Self.ordered, id: \.self) { type in
                         Button {
                             onSelect(type)
@@ -64,6 +99,18 @@ struct BlockFormatBar: View {
         .background(.bar)
         .overlay(alignment: .top) {
             Divider().overlay(theme.current.border)
+        }
+    }
+}
+
+
+extension Mark {
+    var label: String {
+        switch self {
+        case .bold: "Bold"
+        case .italic: "Italic"
+        case .underline: "Underline"
+        case .strikethrough: "Strikethrough"
         }
     }
 }

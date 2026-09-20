@@ -24,6 +24,11 @@ version number so a bug report maps to one commit.
   block's type never changed. Changing a type now also hands the caret back,
   rather than ending the sentence.
 - **Android: a fresh install opens with the welcome note**, as on iOS.
+- **Inline formatting.** Bold, italic, underline, strikethrough and links can
+  be applied to part of a line rather than to a whole block, from a bar above
+  the keyboard that shows what the selection already carries. Formatting
+  travels with the words: split a block and each half keeps its own, merge two
+  and both survive.
 - **iOS: pasting a large chunk of text no longer locks the editor up.** A paste
   of several paragraphs now becomes one block per paragraph, the way a block
   editor should, instead of burying an entire article in a single block whose

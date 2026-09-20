@@ -11,6 +11,8 @@ struct BlockRowView: View {
     @Binding var caret: CaretRequest?
 
     let onCommit: (Block) -> Void
+    /// The selection inside this block moved, so the toolbar can follow it.
+    let onSelectionChange: (NSRange) -> Void
     let onPasteParagraphs: (String, [String], String) -> Void
     /// Return pressed, carrying the text either side of the caret.
     let onSplit: (String, String) -> Void
@@ -21,6 +23,7 @@ struct BlockRowView: View {
 
     @Environment(ThemeManager.self) private var theme
     @State private var text: String = ""
+    @State private var spans: [Span] = []
     @State private var didLoad = false
     /// Coalesces keystrokes into one write. See `commit(text:content:)`.
     @State private var writeTask: Task<Void, Never>?
@@ -43,6 +46,7 @@ struct BlockRowView: View {
         .onAppear {
             guard !didLoad else { return }
             text = content.text
+            spans = content.inlineSpans
             didLoad = true
         }
         .onChange(of: block.content) { _, newValue in
@@ -59,10 +63,22 @@ struct BlockRowView: View {
             // gains focus *and* needs the folded-up text, so a caret aimed here
             // by the editor overrides the focus rule.
             let isStructuralTarget = caret?.blockId == block.id
+
+            // Formatting is not text. A toolbar press changes the spans and
+            // leaves the words alone, and the ownership rule exists to protect
+            // the words — so when the text matches, the formatting is safe to
+            // take even while this block is being edited. Without this, bolding
+            // a word highlighted the button and changed nothing on screen.
+            if incoming == text {
+                let incomingSpans = BlockContent.decode(newValue).inlineSpans
+                if incomingSpans != spans { spans = incomingSpans }
+                return
+            }
+
             guard !isFocused || isStructuralTarget else { return }
-            guard incoming != text else { return }
 
             text = incoming
+            spans = BlockContent.decode(newValue).inlineSpans
         }
         .onChange(of: isFocused) { _, nowFocused in
             if !nowFocused { flush() }
@@ -75,6 +91,7 @@ struct BlockRowView: View {
             marker
             BlockTextView(
                 text: $text,
+                spans: $spans,
                 focusedBlockId: $focusedBlockId,
                 caret: $caret,
                 blockId: block.id,
@@ -86,9 +103,11 @@ struct BlockRowView: View {
                 lineSpacing: theme.current.lineSpacing,
                 onSplit: onSplit,
                 onMergeBackwards: onMergeBackwards,
-                onPasteParagraphs: onPasteParagraphs
+                onPasteParagraphs: onPasteParagraphs,
+                onSelectionChange: onSelectionChange
             )
             .onChange(of: text) { _, newValue in commit(text: newValue) }
+            .onChange(of: spans) { _, _ in commit(text: text) }
         }
         .padding(type == .code ? 10 : 0)
         .background(type == .code ? theme.current.codeBackground : .clear)
@@ -220,6 +239,7 @@ struct BlockRowView: View {
         guard var domain = block.asDomain else { return }
         var updated = override ?? domain.content
         updated.text = newText
+        updated.inlineSpans = InlineSpans.normalized(spans, textLength: (newText as NSString).length)
         domain.content = updated
         onCommit(domain)
     }
