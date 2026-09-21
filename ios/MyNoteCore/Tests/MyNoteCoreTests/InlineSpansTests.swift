@@ -207,6 +207,28 @@ struct InlineSpansTests {
         ])
     }
 
+    /// Kotlin defaults `marks` to empty, so a writer that leaves it out is
+    /// legal. Swift's synthesized decoder made it required, and the throw came
+    /// back from `BlockContent.decode` as empty content — the words gone.
+    @Test("a span written without marks reads as an unmarked run")
+    func spanWithoutMarks() {
+        let fromKotlin = #"{"text":"hello world","spans":[{"start":0,"length":5,"link":"https://example.com"}]}"#
+        let content = BlockContent.decode(fromKotlin)
+        #expect(content.text == "hello world")
+        #expect(content.inlineSpans == [Span(start: 0, length: 5, link: "https://example.com")])
+    }
+
+    /// A block is written whole, so an unreadable payload must not come back as
+    /// no text: the block would render blank and the next keystroke would write
+    /// that blankness back under a newer clock. Mirrored in `InlineSpansTest.kt`.
+    @Test("content that cannot be decoded keeps its text")
+    func salvagesTextFromUndecodableContent() {
+        let broken = #"{"text":"hello world","spans":[{"start":0,"length":5,"marks":["neon"]}]}"#
+        let content = BlockContent.decode(broken)
+        #expect(content.text == "hello world")
+        #expect(content.inlineSpans.isEmpty)
+    }
+
     @Test("offsets are UTF-16 units, so an emoji counts as two")
     func utf16Offsets() {
         // "👋ab" — the wave is one character but two UTF-16 units, so bolding

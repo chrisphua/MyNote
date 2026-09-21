@@ -8,6 +8,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.intOrNull
+import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 
 val MyNoteJson = Json {
@@ -133,7 +134,22 @@ data class BlockContent(
     companion object {
         fun decode(raw: String): BlockContent =
             runCatching { MyNoteJson.decodeFromString(serializer(), raw) }
-                .getOrElse { BlockContent() }
+                .getOrElse { salvaged(raw) }
+
+        /**
+         * Answering a failure with empty content loses the note: the block
+         * renders blank, and because a block is written whole the first
+         * keystroke writes that blankness back under a newer clock — locally and
+         * into the backup. Keep whatever text can still be read and drop only
+         * the part that could not be. Mirrors `BlockContent.decode` in Swift.
+         */
+        private fun salvaged(raw: String): BlockContent =
+            runCatching {
+                BlockContent(
+                    text = MyNoteJson.parseToJsonElement(raw)
+                        .jsonObject["text"]?.jsonPrimitive?.contentOrNull.orEmpty()
+                )
+            }.getOrElse { BlockContent() }
     }
 }
 

@@ -121,10 +121,15 @@ public struct BlockContent: Codable, Equatable, Sendable {
     }
 
     public static func decode(_ raw: String) -> BlockContent {
-        guard let data = raw.data(using: .utf8),
-              let value = try? JSONDecoder().decode(BlockContent.self, from: data)
-        else { return BlockContent() }
-        return value
+        guard let data = raw.data(using: .utf8) else { return BlockContent() }
+        if let value = try? JSONDecoder().decode(BlockContent.self, from: data) { return value }
+        // Answering a failure with empty content loses the note: the block
+        // renders blank, and because a block is written whole the first
+        // keystroke writes that blankness back under a newer clock — locally and
+        // into the backup. Keep whatever text can still be read and drop only
+        // the part that could not be.
+        let object = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
+        return BlockContent(text: object?["text"] as? String ?? "")
     }
 }
 

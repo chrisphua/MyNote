@@ -269,7 +269,11 @@ fun NoteEditorScreen(
                         onSplit = { before, after ->
                             scope.launch {
                                 val next = ordered.firstOrNull { it.orderKey > row.orderKey }?.orderKey
-                                row.asDomain()?.let {
+                                // Re-read rather than split the composition's
+                                // copy: a block is written whole, and a snapshot
+                                // a frame old still holds the text from before
+                                // the last keystroke.
+                                container.repository.blockById(row.id)?.let {
                                     val id = container.repository.splitBlock(it, before, after, next)
                                     // Typing continues at the start of what was
                                     // carried down, as it does on iOS.
@@ -512,20 +516,26 @@ private fun BlockEditor(
                 // is only how they look.
                 value = field.copy(annotatedString = annotated(field.text, spans, colors.accent)),
                 onValueChange = { newValue ->
+                    // Compose reports a selection or composition change through
+                    // this same callback, so what changed has to be recovered by
+                    // comparing rather than read off the caret.
+                    val edit = InlineSpans.editBetween(field.text, newValue.text)
+                    val inserted = newValue.text.substring(edit.from, edit.from + edit.newLength)
+
                     // Return splits the block rather than inserting a newline. A
                     // block editor has no use for a line break inside a
                     // paragraph — that is what the next block is for.
                     //
-                    // Only a newline that was just typed counts. Scanning the
-                    // whole value for one split the block again on every
-                    // keystroke if its text already contained a line break —
-                    // which it can, because a paste keeps them and iOS stores
-                    // them verbatim, so such a block arrives over sync.
-                    val caretPos = newValue.selection.start
-                    val typedReturn = caretPos in 1..newValue.text.length &&
-                        newValue.text[caretPos - 1] == '\n'
-                    if (typedReturn) {
-                        val newline = caretPos - 1
+                    // Only a newline that was just typed counts, and it is found
+                    // in what this edit inserted. A block's text can already hold
+                    // one — a paste keeps them and iOS stores them verbatim, so
+                    // such a block arrives over sync. Scanning the whole value
+                    // split the block again on every keystroke; testing the
+                    // character behind the caret split it when the caret was
+                    // merely placed after a line break that was already there.
+                    val typedNewline = inserted.indexOf('\n')
+                    if (typedNewline >= 0) {
+                        val newline = edit.from + typedNewline
                         val head = newValue.text.substring(0, newline)
                         // Adopt the head immediately. The store write below is
                         // async, and `LaunchedEffect(row.content)` deliberately
@@ -540,10 +550,16 @@ private fun BlockEditor(
                         // so the edit is recovered by comparing — that is what
                         // keeps a bold run bold as the words around it change.
                         val moved = InlineSpans.adjustedForEdit(spans, field.text, newValue.text)
+                        val edited = newValue.text != field.text || moved != spans
                         field = newValue
                         spans = moved
                         onSelectionChange(newValue.selection.start, newValue.selection.end)
-                        emit(newText = newValue.text, newSpans = moved)
+                        // Moving the caret is not an edit. A block is written
+                        // whole under a fresh clock, so writing on a selection
+                        // change would let merely tapping into a note on a device
+                        // that had not synced overwrite a newer edit made on the
+                        // other one — and would make every tap an upload.
+                        if (edited) emit(newText = newValue.text, newSpans = moved)
                     }
                 },
                 textStyle = TextStyle(

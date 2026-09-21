@@ -136,9 +136,15 @@ release.
    address on a page attached to a personal app.
 2. **App Privacy** in App Store Connect. MyNote's is unusually short: *Data Not
    Collected*. Answer nothing else, because nothing else is true.
-3. **Category, age rating, pricing.** Productivity; 4+; free. Nothing is for
-   sale, so no Paid Applications Agreement is needed for this release and there
-   is no Restore Purchase control to provide.
+3. **Category, age rating, pricing.** Productivity; 4+; the app itself is free.
+   Backup is a one-time in-app purchase, so the *Paid Applications Agreement*
+   and the banking and tax profiles from §2 have to be in place and
+   `com.chrisphua.MyNote.pro` has to be attached to this version. Ship without
+   it and `isPro` is never true for anyone, so `uploadsAllowed` stays false
+   (`AppEnvironment.swift`) and backup cannot work at all — while the store
+   description sells it, which is a 2.3.1 rejection as well as no revenue. The
+   Restore purchase control Apple requires is already in Settings and on the
+   paywall on both platforms.
 4. **Export compliance** is already declared in `Info.plist`
    (`ITSAppUsesNonExemptEncryption = false`), so the upload does not prompt.
 5. **Attach the build and submit.**

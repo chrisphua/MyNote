@@ -55,6 +55,22 @@ public struct Span: Codable, Equatable, Sendable {
         self.link = link
     }
 
+    enum CodingKeys: String, CodingKey {
+        case start, length, marks, link
+    }
+
+    /// Written by hand because the synthesized one makes `marks` **required**,
+    /// while Kotlin's `Span` defaults it to empty — and a link-only run has no
+    /// marks to write. A throw here is not a lost style: `BlockContent.decode`
+    /// answers a failure with empty content, so it is the block's words gone.
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        start = try container.decode(Int.self, forKey: .start)
+        length = try container.decode(Int.self, forKey: .length)
+        marks = (try container.decodeIfPresent([Mark].self, forKey: .marks) ?? []).uniqueSorted()
+        link = try container.decodeIfPresent(String.self, forKey: .link)
+    }
+
     public var end: Int { start + length }
 }
 

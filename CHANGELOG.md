@@ -4,7 +4,10 @@ Notable changes to MyNote. Format follows [Keep a Changelog](https://keepachange
 versions follow [SemVer](https://semver.org/). iOS and Android ship from the same
 version number so a bug report maps to one commit.
 
-## [Unreleased]
+## [1.0.0] — 2026-09-21
+
+The first release. Offline-first notes on iOS and Android, backed up into your
+own iCloud Drive or Google Drive, with no server in between.
 
 ### Fixed
 
@@ -53,6 +56,22 @@ version number so a bug report maps to one commit.
   it, so a fresh install opened on an empty pane reading "Pick a note, or start
   a new one" with no list in sight. Showing the list also no longer slides it
   over the note you are reading.
+- **Android: tapping into a note could undo an edit made on another device.**
+  Moving the caret reports the same way an edit does, and the block was written
+  back each time — under a fresh clock, so a device that had not synced yet
+  would overwrite the newer text with its own older copy, on both devices and in
+  the backup. Only an actual edit is written now.
+- **Android: placing the caret after an existing line break no longer splits the
+  block.** A pasted paragraph keeps its line breaks, and parking the caret after
+  one was read as having just pressed Return.
+- **Android: splitting a block keeps the last character typed.** The split was
+  built from the copy on screen, which can be one keystroke behind the store.
+- **Both: a block whose formatting cannot be read keeps its words.** Anything
+  unreadable in the stored payload used to blank the whole block, and because a
+  block is written whole the next keystroke wrote that blankness back — text
+  gone, locally and in the backup. The text survives now and only the formatting
+  is dropped. iOS also reads a run written without any marks, which Android has
+  always been able to write.
 - **Both: backspacing or deleting a block next to a divider no longer loses the
   text.** It folds into the nearest block that can actually hold text, rather
   than into the divider, where it would have been unreachable but still backed

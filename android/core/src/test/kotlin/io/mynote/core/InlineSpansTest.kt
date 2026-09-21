@@ -254,6 +254,34 @@ class InlineSpansTest {
         )
     }
 
+    /**
+     * The mirror of the Swift vector: a run with no marks is legal, and both
+     * sides must read it. Swift's synthesized decoder made `marks` required,
+     * and the throw came back as empty content — the words gone.
+     */
+    @Test
+    fun `a span written without marks reads as an unmarked run`() {
+        val fromSwift =
+            """{"text":"hello world","spans":[{"start":0,"length":5,"link":"https:\/\/example.com"}]}"""
+        val content = BlockContent.decode(fromSwift)
+        assertEquals("hello world", content.text)
+        assertEquals(listOf(Span.of(0, 5, emptyList(), "https://example.com")), content.inlineSpans)
+    }
+
+    /**
+     * A block is written whole, so an unreadable payload must not come back as
+     * no text: the block would render blank and the next keystroke would write
+     * that blankness back under a newer clock. Mirrored in
+     * `InlineSpansTests.swift`.
+     */
+    @Test
+    fun `content that cannot be decoded keeps its text`() {
+        val broken = """{"text":"hello world","spans":[{"start":0,"length":5,"marks":["neon"]}]}"""
+        val content = BlockContent.decode(broken)
+        assertEquals("hello world", content.text)
+        assertEquals(emptyList<Span>(), content.inlineSpans)
+    }
+
     @Test
     fun `offsets are UTF-16 units, so an emoji counts as two`() {
         // "👋ab" — the wave is one character but two UTF-16 units, so bolding
