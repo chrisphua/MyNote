@@ -129,6 +129,25 @@ There is no build-time check; the vectors are the only guard.
   appearance — so spans are adopted from the store even while focused, provided
   the text matches. Blocking them made the bold button light up and change
   nothing on screen.
+- **Never delay a local write.** Saving was once coalesced into one write every
+  300ms, flushed when a field lost focus. Nothing flushed it when the app was
+  backgrounded or killed, so the last edit before the app went away was lost —
+  typing a word and swiping the app off screen threw the word away. Rule 1 of
+  this project means the write itself is never on a timer. Debounce the parts
+  where a late answer is harmless instead: the pending-changes query behind the
+  sync indicator is the expensive one, and `refreshPendingSoon` is where it now
+  lives. The real cost of typing in a long note was laying out one enormous
+  block, not the write.
+- **Verify persistence in the store, not on the screen.** The screen showed the
+  deletion; the database still held the old text. A UI test that only reads the
+  field would have passed. On iOS the store is at
+  `$(xcrun simctl get_app_container <udid> com.chrisphua.MyNote data)/Library/Application Support/default.store`.
+- **A UI test must start from an empty store.** The simulator keeps its data
+  between launches, so a run inherits whatever the last one left. `-ui-testing`
+  wipes and skips the welcome note; `-fresh-install` wipes and keeps it, which
+  is what the screenshots need. Both clear the `welcome.seeded` flag, which
+  outlives the store. Without this I spent a long time debugging a stale note
+  from two days earlier.
 - **Anything bound straight to the store fights the person typing.** Every
   field needs a local copy it owns while focused, adopting the store's value
   only when focus leaves. The title was missed when the blocks were fixed, and

@@ -35,6 +35,9 @@ final class StoreScreenshots: XCTestCase {
         // Portrait throughout. Rotating the iPad gave a landscape layout inside
         // a portrait-sized image — a sideways screenshot the store would reject.
         XCUIDevice.shared.orientation = .portrait
+        // Wipe, but keep the welcome note: these are pictures of a first launch,
+        // and a store left over from another test is not that.
+        app.launchArguments = ["-fresh-install"]
         app.launch()
 
         // 1 — the list, with the note every new install is given.

@@ -26,7 +26,6 @@ struct NoteEditorView: View {
     /// The title's own copy, for the same reason every block keeps one.
     @State private var title: String = ""
     @State private var titleLoaded = false
-    @State private var titleWriteTask: Task<Void, Never>?
     @FocusState private var titleFocused: Bool
 
     /// The selection inside the focused block, in UTF-16 offsets — what the
@@ -154,34 +153,12 @@ struct NoteEditorView: View {
                 title = note?.title ?? ""
                 titleLoaded = true
             }
-            .onChange(of: title) { _, newValue in scheduleRename(to: newValue) }
+            .onChange(of: title) { _, newValue in Task { await rename(to: newValue) } }
             .onChange(of: note?.title) { _, incoming in
                 // While it is being typed in, the field owns its text.
                 guard !titleFocused, let incoming, incoming != title else { return }
                 title = incoming
             }
-            .onChange(of: titleFocused) { _, focused in
-                if !focused { flushRename() }
-            }
-            .onDisappear { flushRename() }
-    }
-
-    /// Coalesces a run of keystrokes into one rename, as blocks do.
-    private func scheduleRename(to newValue: String) {
-        titleWriteTask?.cancel()
-        titleWriteTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            await rename(to: newValue)
-        }
-    }
-
-    private func flushRename() {
-        guard let pending = titleWriteTask else { return }
-        pending.cancel()
-        titleWriteTask = nil
-        let newValue = title
-        Task { await rename(to: newValue) }
     }
 
     private func rename(to newValue: String) async {

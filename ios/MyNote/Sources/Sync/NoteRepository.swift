@@ -285,7 +285,7 @@ struct NoteRepository {
             // still correct for this session, so keep the app usable.
             assertionFailure("local write failed: \(error)")
         }
-        await coordinator.refreshPending()
+        coordinator.refreshPendingSoon()
         coordinator.scheduleSync()
     }
 }

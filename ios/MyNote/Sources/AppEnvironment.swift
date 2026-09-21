@@ -102,7 +102,25 @@ final class AppEnvironment {
 
         // After the folder has been read, so a restored backup wins over the
         // welcome note rather than being buried under it.
-        if !ProcessInfo.processInfo.arguments.contains("-ui-testing") {
+        // A UI test starts from an empty store.
+        //
+        // The simulator keeps its data between launches, so without this every
+        // run inherits the notes the last one left. That does not just make
+        // assertions awkward — it has already sent me chasing a bug that was
+        // really a stale note from two days earlier.
+        //
+        // `-ui-testing` also skips the welcome note, because most tests want an
+        // empty app. `-fresh-install` wipes but still seeds, which is what the
+        // screenshots need: the state a real first launch is in.
+        let arguments = ProcessInfo.processInfo.arguments
+        if arguments.contains("-ui-testing") || arguments.contains("-fresh-install") {
+            try? await store.clearAll()
+            // The welcome note is guarded by a flag in UserDefaults as well as
+            // by the store being empty, and that flag outlives the store.
+            UserDefaults.standard.removeObject(forKey: "welcome.seeded")
+        }
+
+        if !arguments.contains("-ui-testing") {
             let existing = (try? await store.noteCount()) ?? 0
             await NoteRepository(store: store, coordinator: syncCoordinator)
                 .seedWelcomeNoteIfNeeded(existingNoteCount: existing)

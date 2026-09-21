@@ -25,8 +25,6 @@ struct BlockRowView: View {
     @State private var text: String = ""
     @State private var spans: [Span] = []
     @State private var didLoad = false
-    /// Coalesces keystrokes into one write. See `commit(text:content:)`.
-    @State private var writeTask: Task<Void, Never>?
 
     private var isFocused: Bool { focusedBlockId == block.id }
     private var type: BlockType { BlockType(rawValue: block.type) ?? .paragraph }
@@ -80,10 +78,6 @@ struct BlockRowView: View {
             text = incoming
             spans = BlockContent.decode(newValue).inlineSpans
         }
-        .onChange(of: isFocused) { _, nowFocused in
-            if !nowFocused { flush() }
-        }
-        .onDisappear { flush() }
     }
 
     private var editableRow: some View {
@@ -203,36 +197,22 @@ struct BlockRowView: View {
         }
     }
 
-    /// Saves the block, coalescing a run of keystrokes into one write.
+    /// Saves the block.
     ///
-    /// Writing on every keystroke meant that every character typed re-encoded
-    /// the whole block to JSON, wrote it to the store, and ran a pending-changes
-    /// query. That is unnoticeable in a one-line block and crippling in a large
-    /// one: after pasting an article into a block, a single keypress took the
-    /// best part of a second on a Mac, and far longer on a phone.
+    /// Immediately, on every keystroke. This was coalesced into one write every
+    /// 300ms to keep a large block cheap to type in, and that lost data: with
+    /// nothing flushing the timer when the app is backgrounded or killed, an
+    /// edit made in the last fraction of a second never reached the store. A
+    /// note app may not drop what someone just typed, so the coalescing is gone
+    /// and the expensive part — a pending-changes query per keystroke — is
+    /// debounced inside the coordinator instead, where losing one costs nothing
+    /// but a stale indicator.
     ///
-    /// The decode is inside the task for the same reason — it ran per keystroke
-    /// too, on the whole block.
-    ///
-    /// This still honours "an edit is saved locally and the user moves on": the
-    /// delay is shorter than a pause between words, and `flush()` forces the
-    /// write out the moment focus leaves the block or the row goes away, so no
-    /// edit can be left sitting in a timer.
+    /// The real cost of typing in a long note was never this write; it was
+    /// laying out one enormous block, which splitting a paste into paragraphs
+    /// and making the stack lazy fixed.
     private func commit(text newText: String, content override: BlockContent? = nil) {
-        writeTask?.cancel()
-        writeTask = Task { @MainActor in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled else { return }
-            write(text: newText, content: override)
-        }
-    }
-
-    /// Writes any coalesced edit immediately.
-    private func flush() {
-        guard let pending = writeTask else { return }
-        pending.cancel()
-        writeTask = nil
-        write(text: text)
+        write(text: newText, content: override)
     }
 
     private func write(text newText: String, content override: BlockContent? = nil) {

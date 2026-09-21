@@ -25,7 +25,7 @@ public enum WelcomeNote {
     public static let lines: [Line] = [
         .init(.heading1, "Everything here is a block"),
         .init(.paragraph, "Press Return to start a new one. Backspace at the very start of a block folds it into the one above, so nothing is ever stranded."),
-        .init(.paragraph, "The bar above the keyboard changes what a block is. Long-press a block for the same menu, plus Delete."),
+        .init(.paragraph, "The bar above the keyboard changes what a block is, and makes a word bold, italic, underlined or struck through."),
 
         .init(.heading2, "What a block can be"),
         .init(.bullet, "A bulleted list — Return keeps the bullet going"),

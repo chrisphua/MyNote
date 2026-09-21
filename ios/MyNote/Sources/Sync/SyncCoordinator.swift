@@ -170,6 +170,8 @@ final class SyncCoordinator {
     // MARK: - Syncing
 
     /// Call after any local edit. Coalesces a burst into one upload.
+    private var pendingRefreshTask: Task<Void, Never>?
+
     func scheduleSync() {
         guard provider != .none else { return }
         debounceTask?.cancel()
@@ -218,6 +220,22 @@ final class SyncCoordinator {
 
     func refreshPending() async {
         hasPendingChanges = await engine.hasPendingChanges()
+    }
+
+    /// `refreshPending`, coalesced.
+    ///
+    /// Every local write asks the store whether anything is still unsynced, and
+    /// that is a query — once per keystroke, which is the part of saving that
+    /// actually cost something in a long note. It drives one indicator, so a
+    /// late answer is harmless; a late *write* is not, which is why the write
+    /// itself is never delayed.
+    func refreshPendingSoon() {
+        pendingRefreshTask?.cancel()
+        pendingRefreshTask = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(400))
+            guard !Task.isCancelled else { return }
+            await self?.refreshPending()
+        }
     }
 
     // MARK: - Licence
