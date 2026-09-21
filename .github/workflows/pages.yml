@@ -1,0 +1,44 @@
+name: Pages
+
+# Publishes the privacy policy and support page, which Apple requires to be
+# reachable before a submission is accepted.
+#
+# Uploads `site/` rather than pointing Pages at a branch folder. Pages can only
+# serve the repository root or `/docs`, and `/docs` here holds the project's own
+# notes — architecture, costs, deployment — which have no business being served
+# as a website.
+
+on:
+  push:
+    branches: [main]
+    paths: ['site/**', '.github/workflows/pages.yml']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# One deployment at a time; never cancel one in flight, or the live pages can be
+# left half-swapped.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/configure-pages@v5
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: site
+
+      - id: deployment
+        uses: actions/deploy-pages@v4
