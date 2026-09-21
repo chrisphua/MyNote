@@ -21,6 +21,7 @@ import androidx.compose.material.icons.filled.FormatStrikethrough
 import androidx.compose.material.icons.filled.FormatUnderlined
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Code
+import androidx.compose.material.icons.filled.FormatListNumbered
 import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.Notes
@@ -61,10 +62,16 @@ fun BlockFormatBar(
 
     // Ordered for reach, not for the enum's sake: what people press constantly
     // sits nearest the left thumb.
+    // Every type, matching iOS. The bar used to carry a subset, with the rest
+    // hidden behind a ⋮ sitting next to every block — which is clutter on each
+    // row for something needed occasionally. The bar scrolls; the ⋮ is gone.
     val items = listOf(
         BlockType.PARAGRAPH to Icons.Default.Notes,
         BlockType.HEADING1 to Icons.Default.Title,
+        BlockType.HEADING2 to Icons.Default.Title,
+        BlockType.HEADING3 to Icons.Default.Title,
         BlockType.BULLET to Icons.AutoMirrored.Filled.FormatListBulleted,
+        BlockType.NUMBERED to Icons.Default.FormatListNumbered,
         BlockType.TODO_ITEM to Icons.Default.Check,
         BlockType.QUOTE to Icons.Default.FormatQuote,
         BlockType.CODE to Icons.Default.Code,
@@ -126,7 +133,21 @@ private fun FormatButton(
             .background(if (selected) colors.accent.copy(alpha = 0.18f) else colors.surface)
             .semantics { contentDescription = type.label },
     ) {
-        Icon(icon, null, tint = if (selected) colors.accent else colors.textSecondary)
+        Icon(
+            icon,
+            null,
+            tint = if (selected) colors.accent else colors.textSecondary,
+            // The three headings share one glyph, so size carries the
+            // difference, the way it does in the text itself.
+            modifier = Modifier.size(
+                when (type) {
+                    BlockType.HEADING1 -> 24.dp
+                    BlockType.HEADING2 -> 20.dp
+                    BlockType.HEADING3 -> 16.dp
+                    else -> 24.dp
+                }
+            ),
+        )
     }
 }
 

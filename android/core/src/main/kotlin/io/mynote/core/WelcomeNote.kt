@@ -19,7 +19,7 @@ object WelcomeNote {
     val lines: List<Line> = listOf(
         Line(BlockType.HEADING1, "Everything here is a block"),
         Line(BlockType.PARAGRAPH, "Press Return to start a new one. Backspace at the very start of a block folds it into the one above, so nothing is ever stranded."),
-        Line(BlockType.PARAGRAPH, "The bar above the keyboard changes what a block is. Long-press a block for the same menu, plus Delete."),
+        Line(BlockType.PARAGRAPH, "The bar above the keyboard changes what a block is, and makes a word bold, italic, underlined or struck through."),
 
         Line(BlockType.HEADING2, "What a block can be"),
         Line(BlockType.BULLET, "A bulleted list — Return keeps the bullet going"),

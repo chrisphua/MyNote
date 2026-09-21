@@ -31,8 +31,6 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.CheckBox
 import androidx.compose.material.icons.filled.CheckBoxOutlineBlank
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -318,21 +316,6 @@ fun NoteEditorScreen(
                         },
                         onFocusChange = { focused -> if (focused) activeBlockId = row.id },
                         onSelectionChange = { start, end -> selection = start to end },
-                        onDelete = {
-                            // Never leave a note with zero blocks — there would
-                            // be nowhere to type.
-                            if (blocks.size > 1) {
-                                val previous = ordered.lastOrNull {
-                                    it.orderKey < row.orderKey && it.holdsText
-                                }
-                                scope.launch {
-                                    container.repository.deleteBlock(row.id)
-                                    if (previous != null) {
-                                        caret = CaretRequest(previous.id, CaretRequest.END)
-                                    }
-                                }
-                            }
-                        },
                     )
                 }
 
@@ -393,7 +376,6 @@ private fun BlockEditor(
     onMergeBackwards: () -> Unit,
     onFocusChange: (Boolean) -> Unit,
     onSelectionChange: (Int, Int) -> Unit,
-    onDelete: () -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
     val metrics = LocalMyNoteMetrics.current
@@ -406,7 +388,6 @@ private fun BlockEditor(
     var field by remember(row.id) { mutableStateOf(TextFieldValue(content.text)) }
     var spans by remember(row.id) { mutableStateOf(content.inlineSpans) }
     val text = field.text
-    var menuOpen by remember { mutableStateOf(false) }
     var isFocused by remember(row.id) { mutableStateOf(false) }
     val focusRequester = remember(row.id) { FocusRequester() }
 
@@ -600,27 +581,6 @@ private fun BlockEditor(
             )
         }
 
-        Box {
-            IconButton(onClick = { menuOpen = true }) {
-                Text("⋮", color = colors.textSecondary)
-            }
-            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                for (candidate in BlockType.entries) {
-                    DropdownMenuItem(
-                        text = { Text(candidate.label) },
-                        onClick = {
-                            menuOpen = false
-                            emit(newType = candidate)
-                        },
-                    )
-                }
-                HorizontalDivider()
-                DropdownMenuItem(
-                    text = { Text("Delete block") },
-                    onClick = { menuOpen = false; onDelete() },
-                )
-            }
-        }
     }
 }
 

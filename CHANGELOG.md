@@ -24,6 +24,15 @@ version number so a bug report maps to one commit.
   block's type never changed. Changing a type now also hands the caret back,
   rather than ending the sentence.
 - **Android: a fresh install opens with the welcome note**, as on iOS.
+- **iOS: the last thing you typed is never lost.** Saving had been coalesced
+  into one write every 300ms to make a long note cheap to type in, with nothing
+  forcing that out when the app was backgrounded or killed — so an edit made in
+  the last fraction of a second never reached the store, and deleted words came
+  back. Edits save as they are made again.
+- **Android: the ⋮ beside every block is gone.** Everything it held — every
+  block type — is on the bar above the keyboard, which is where iOS has always
+  had it.
+- **Android: notes are deleted by swiping**, not by a bin sitting on every row.
 - **The note list is just titles.** The page glyph beside every title is gone;
   it was the same icon on every row and said nothing about the note.
 - **Inline formatting.** Bold, italic, underline, strikethrough and links can

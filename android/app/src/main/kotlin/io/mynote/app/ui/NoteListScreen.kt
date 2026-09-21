@@ -21,6 +21,9 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
@@ -36,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextStyle
@@ -156,12 +160,67 @@ private fun SearchField(value: String, onChange: (String) -> Unit) {
     }
 }
 
+/**
+ * A note in the list, with swipe-to-delete.
+ *
+ * There used to be a bin on every row. It made deleting the most prominent
+ * thing you could do to a note you had just written, and it is not an action
+ * anyone needs one tap away. iOS has always deleted by swiping; this now
+ * matches, so the affordance is discoverable without being an invitation.
+ */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun NoteListRow(
     note: NoteRow,
     selected: Boolean,
     onClick: () -> Unit,
     onDelete: () -> Unit,
+) {
+    val colors = LocalMyNoteColors.current
+    val metrics = LocalMyNoteMetrics.current
+
+    val dismiss = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete()
+                true
+            } else {
+                false
+            }
+        },
+        // A deliberate swipe, not a brush past it.
+        positionalThreshold = { distance -> distance * 0.5f },
+    )
+
+    SwipeToDismissBox(
+        state = dismiss,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(metrics.cornerRadius))
+                    // A literal rather than a theme colour: the theme model is
+                    // shared with iOS and synced, and a swipe background is not
+                    // worth a wire-format change. This is the red iOS uses for
+                    // the same gesture.
+                    .background(Color(0xFFE5484D))
+                    .padding(horizontal = 20.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(Icons.Default.Delete, "Delete note", tint = colors.background)
+            }
+        },
+    ) {
+        NoteListRowContent(note, selected, onClick)
+    }
+}
+
+@Composable
+private fun NoteListRowContent(
+    note: NoteRow,
+    selected: Boolean,
+    onClick: () -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
     val metrics = LocalMyNoteMetrics.current
@@ -188,9 +247,6 @@ private fun NoteListRow(
                 color = colors.textSecondary,
                 fontSize = metrics.baseSize * 0.78f,
             )
-        }
-        IconButton(onClick = onDelete) {
-            Icon(Icons.Default.Delete, "Delete note", tint = colors.textSecondary)
         }
     }
 }
