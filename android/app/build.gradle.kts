@@ -8,15 +8,15 @@ plugins {
 
 android {
     namespace = "io.mynote.app"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.chrisphua.mynote"
         minSdk = 26          // covers ~98% of active devices, and gives java.time
-        targetSdk = 35
-        // Play keeps every version code ever uploaded. 1 was consumed by the
-        // first closed-testing draft; a re-upload must always be higher.
-        versionCode = 2
+        targetSdk = 36
+        // Play keeps every version code ever uploaded. 1 and 2 were consumed by
+        // the first closed-testing drafts; a re-upload must always be higher.
+        versionCode = 3
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

@@ -1,11 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
+    <!-- Notes only, for both cloud backup and device-to-device transfer. An
+         explicit include leaves everything else out, so the sync cursor in
+         sharedpref is not carried over — a stale cursor on a fresh install
+         would skip whatever changed in between. -->
     <cloud-backup>
         <include domain="database" path="mynote.db" />
-        <exclude domain="sharedpref" path="mynote.sync.xml" />
     </cloud-backup>
     <device-transfer>
         <include domain="database" path="mynote.db" />
-        <exclude domain="sharedpref" path="mynote.sync.xml" />
     </device-transfer>
 </data-extraction-rules>

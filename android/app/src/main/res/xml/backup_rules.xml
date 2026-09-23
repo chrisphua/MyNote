@@ -1,7 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <full-backup-content>
-    <!-- Notes are backed up; the sync cursor is not, because restoring a stale
-         cursor onto a fresh install would skip changes made in between. -->
+    <!-- Only the notes database is backed up. Naming it here excludes everything
+         else by omission, which is what we want: the sync cursor lives in
+         sharedpref, and restoring a stale cursor onto a fresh install would skip
+         every change made in between. -->
     <include domain="database" path="mynote.db" />
-    <exclude domain="sharedpref" path="mynote.sync.xml" />
 </full-backup-content>
