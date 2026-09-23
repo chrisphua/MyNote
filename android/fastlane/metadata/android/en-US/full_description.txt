@@ -1,0 +1,20 @@
+MyNote is a block editor for people who would rather not hand their notes to somebody else's server.
+
+There is no account to create and nothing to sign in to. Open the app and write.
+
+WRITTEN IN BLOCKS
+Every paragraph, heading, list item and quote is its own block. Press Return to start a new one. Backspace at the very start of a block folds it into the one above, so a stray keystroke never strands your text.
+
+Headings, bulleted and numbered lists, to-dos you can tick off, quotes, code and dividers — all reachable from a bar that sits above the keyboard, so you are never hunting through menus mid-sentence.
+
+FORMATTING INSIDE A LINE
+Bold, italic, underline, strikethrough and links apply to part of a line rather than to the whole block. Formatting travels with the words: split a block and each half keeps its own, merge two and both survive.
+
+WORKS WITHOUT A CONNECTION
+Everything is saved on your device the moment you type it. There is no spinner, no "saving...", and nothing to wait for. A tunnel, a plane or a dead signal makes no difference.
+
+NOTHING LEAVES YOUR PHONE
+MyNote has no servers, so there is nowhere for your notes to be sent. No account, no analytics, no advertising identifier. Your notes stay on your device.
+
+MAKE IT YOURS
+Three built-in themes, or build your own: colours for light and dark, text size, line height, spacing, corners and page width. Every screen follows it.

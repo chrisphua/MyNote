@@ -1,0 +1,1 @@
+A private block editor. No account, no servers, and it works offline.
