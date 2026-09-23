@@ -30,6 +30,17 @@ class AppContainer(private val context: Context) {
 
     val driveAuth = GoogleDriveAuth(context, BuildConfig.GOOGLE_OAUTH_CLIENT_ID)
 
+    /**
+     * Whether to offer backup at all.
+     *
+     * Drive is the only place an Android device can back up to — iCloud cannot
+     * reach Android — so with no OAuth client id in the build there is nothing
+     * to choose between, and the Backup section is hidden rather than shown
+     * with one inert row. Supply the client id and it returns by itself; there
+     * is no flag to remember to flip.
+     */
+    val backupAvailable: Boolean get() = driveAuth.isConfigured
+
     val syncCoordinator = SyncCoordinator(
         context = context,
         store = store,

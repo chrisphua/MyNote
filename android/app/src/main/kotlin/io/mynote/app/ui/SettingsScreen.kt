@@ -186,41 +186,41 @@ fun SettingsScreen(
             contentPadding = PaddingValues(metrics.contentPadding),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
-            item { SectionHeader("Backup") }
-            items(StorageProvider.entries.filter {
-                it != StorageProvider.GOOGLE_DRIVE || container.driveAuth.isConfigured
-            }) { option ->
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(metrics.cornerRadius))
-                        .clickable { choose(option) }
-                        .padding(vertical = 10.dp),
-                    verticalAlignment = Alignment.Top,
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        Text(option.title, color = colors.textPrimary)
-                        Text(option.detail, color = colors.textSecondary,
-                             fontSize = metrics.baseSize * 0.82f)
-                    }
-                    if (provider == option) {
-                        Icon(Icons.Default.Check, "Selected", tint = colors.accent)
+            if (container.backupAvailable) {
+                item { SectionHeader("Backup") }
+                items(StorageProvider.entries) { option ->
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(metrics.cornerRadius))
+                            .clickable { choose(option) }
+                            .padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.Top,
+                    ) {
+                        Column(Modifier.weight(1f)) {
+                            Text(option.title, color = colors.textPrimary)
+                            Text(option.detail, color = colors.textSecondary,
+                                 fontSize = metrics.baseSize * 0.82f)
+                        }
+                        if (provider == option) {
+                            Icon(Icons.Default.Check, "Selected", tint = colors.accent)
+                        }
                     }
                 }
-            }
-            item { SyncStatusRow(container) }
-            item {
-                Caption("MyNote has no servers. Your notes go to storage you already own, and we never see them.")
-            }
-            if (provider != StorageProvider.NONE) {
+                item { SyncStatusRow(container) }
                 item {
-                    TextButton(onClick = { scope.launch { container.syncCoordinator.syncNow() } }) {
-                        Text("Back up now")
+                    Caption("MyNote has no servers. Your notes go to storage you already own, and we never see them.")
+                }
+                if (provider != StorageProvider.NONE) {
+                    item {
+                        TextButton(onClick = { scope.launch { container.syncCoordinator.syncNow() } }) {
+                            Text("Back up now")
+                        }
                     }
                 }
-            }
 
-            item { HorizontalDivider(color = colors.border) }
+                item { HorizontalDivider(color = colors.border) }
+            }
             item { SectionHeader("Theme") }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

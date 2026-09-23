@@ -32,6 +32,10 @@ own iCloud Drive or Google Drive, with no server in between.
   forcing that out when the app was backgrounded or killed — so an edit made in
   the last fraction of a second never reached the store, and deleted words came
   back. Edits save as they are made again.
+- **Android: the Backup section is hidden when there is nowhere to back up
+  to.** Google Drive is the only destination an Android device has — iCloud
+  cannot reach Android — so a build without a Drive client id was showing a
+  Backup heading above a single row that chose nothing.
 - **Android: the ⋮ beside every block is gone.** Everything it held — every
   block type — is on the bar above the keyboard, which is where iOS has always
   had it.
