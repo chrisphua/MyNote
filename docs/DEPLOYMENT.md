@@ -6,17 +6,94 @@ apps.
 | Workflow | Trigger | Does |
 |---|---|---|
 | `ios.yml` | push / PR under `ios/`, tag `ios-v*` | core tests → build → TestFlight on tag |
-| `android.yml` | push / PR under `android/`, tag `android-v*` | core tests → debug build → Play internal on tag |
+| `android.yml` | push / PR under `android/`, tag `android-v*` | core tests → debug build → Play **closed testing** on tag |
 | `code-review.yml` | every non-draft PR | automated review against `.claude/agents/code-reviewer.md` |
 
 Releases are cut by **tagging**, so merging to `main` never ships by itself:
 
 ```bash
-git tag ios-v0.2.0     && git push origin ios-v0.2.0
-git tag android-v0.2.0 && git push origin android-v0.2.0
+git tag ios-v1.0.0     && git push origin ios-v1.0.0
+git tag android-v1.0.0 && git push origin android-v1.0.0
 ```
 
 ---
+
+## Publishing to Play from the command line
+
+Two routes, both needing the same four credentials. Neither works without them —
+the repo deliberately holds no keystore and no service account key.
+
+| Needed | Where it goes |
+|---|---|
+| Upload keystore (`release.jks`) + its three passwords | `ANDROID_KEYSTORE_*` secrets, or `ANDROID_KEYSTORE_PATH` etc. in the shell |
+| Play service account JSON (see below) | `PLAY_SERVICE_ACCOUNT_JSON` secret, or `PLAY_SERVICE_ACCOUNT_JSON_PATH` |
+
+**The app must already exist in Play Console** with package
+`com.chrisphua.mynote` — the Publishing API cannot create a listing.
+
+**A draft app only accepts draft releases.** Until the first release has been
+rolled out from the Console, the API answers any other status with
+`400 Only releases with status draft may be created on draft app`. The bundle
+still uploads; it just lands as a draft for a person to finish. So the first
+release is always half manual, and every one after it is a single command.
+
+### Creating the service account
+
+The identity is made in **Google Cloud**; the permissions are granted in **Play
+Console**. There is no GCP IAM role named "Android Publisher" — granting roles
+in Cloud does nothing for Play, which is where most of the confusion lives.
+
+1. Play Console → **Setup → API access** → link a Cloud project. This also
+   enables the *Google Play Android Developer API*, which is the part that has
+   to be on.
+2. Cloud Console → **IAM & Admin → Service Accounts → Create**. Name it
+   `mynote-play-publisher`. **Skip the "grant access to project" step** — no GCP
+   role is needed, and Owner is a common, useless over-grant.
+3. **Keys → Add key → JSON**. It downloads once and cannot be fetched again.
+   Keep it out of the repo: `~/.mynote/play-service-account.json`, `chmod 600`.
+4. Play Console → **API access** → the account now appears → **Manage Play
+   Console permissions → Grant access**. Scope it to the MyNote app, and under
+   *Releases* tick **Release apps to testing tracks** and **Manage testing track
+   releases**. Add **Release to production** only when promoting.
+
+A `403` on the first upload is usually permission propagation, which takes
+minutes. Wait and retry before changing anything.
+
+**Route 1 — CI, which is the normal one.** Fill in the secrets, create the
+`android-release` environment with a required reviewer, then:
+
+```bash
+git tag android-v1.0.0 && git push origin android-v1.0.0
+```
+
+Or run it by hand and pick the track:
+
+```bash
+gh workflow run android.yml -f track=internal
+```
+
+**Route 2 — from this machine.** Needs the keystore and the JSON on disk:
+
+```bash
+cd android && bundle install
+export ANDROID_KEYSTORE_PATH=/path/to/release.jks
+export ANDROID_KEYSTORE_PASSWORD=… ANDROID_KEY_ALIAS=mynote ANDROID_KEY_PASSWORD=…
+export PLAY_SERVICE_ACCOUNT_JSON_PATH=/path/to/play-service-account.json
+export GOOGLE_OAUTH_CLIENT_ID=…          # omit and Drive backup is hidden
+
+bundle exec fastlane closed     # closed track — starts the 14-day clock
+bundle exec fastlane beta       # internal track — smoke test only
+bundle exec fastlane promote    # closed → production, 10% staged rollout
+```
+
+### Internal testing does not shorten anything
+
+It is tempting to push to internal testing first because it is instant. It is
+the right track for checking that a signed build installs and that the in-app
+purchase works against a licence tester — and **it counts for nothing** towards
+production access. Only a *closed* test, running continuously for 14 days with
+the required number of opted-in testers, does. Upload to closed testing on day
+one, even if the build is rough; the clock is the long pole, not the build.
 
 ## Launch timeline — start this before the app is finished
 

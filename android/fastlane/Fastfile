@@ -12,31 +12,45 @@ platform :android do
   end
 
   desc "Build a signed release bundle and upload to internal testing"
+  # Fastest way to get a signed build onto a phone. It does NOT count towards
+  # Play's closed-testing requirement — see the :closed lane.
   lane :beta do
+    build_and_upload(track: "internal")
+  end
+
+  desc "Build a signed release bundle and upload to closed testing"
+  # A personal Play account cannot go to production until a closed test has run
+  # continuously for 14 days. Only a closed track starts that clock, which is
+  # why this, not :beta, is the lane that shortens the road to production.
+  lane :closed do
+    build_and_upload(track: "alpha")
+  end
+
+  desc "Promote the closed-testing build to production"
+  lane :promote do |options|
+    upload_to_play_store(
+      track: options[:track] || "alpha",
+      track_promote_to: "production",
+      skip_upload_aab: true,
+      skip_upload_metadata: false,
+      # A staged rollout limits the blast radius of a bad build.
+      rollout: "0.1"
+    )
+  end
+
+  private_lane :build_and_upload do |options|
     gradle(task: "clean")
     gradle(
       task: "app:bundle",
       build_type: "Release"
     )
     upload_to_play_store(
-      track: "internal",
+      track: options[:track],
       release_status: "completed",
       aab: "app/build/outputs/bundle/release/app-release.aab",
       skip_upload_metadata: true,
       skip_upload_images: true,
       skip_upload_screenshots: true
-    )
-  end
-
-  desc "Promote the internal build to production"
-  lane :promote do
-    upload_to_play_store(
-      track: "internal",
-      track_promote_to: "production",
-      skip_upload_aab: true,
-      skip_upload_metadata: false,
-      # A staged rollout limits the blast radius of a bad build.
-      rollout: "0.1"
     )
   end
 end

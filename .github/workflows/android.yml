@@ -7,6 +7,12 @@ on:
   pull_request:
     paths: ['android/**', '.github/workflows/android.yml']
   workflow_dispatch:
+    inputs:
+      track:
+        description: 'Play track to publish to'
+        type: choice
+        default: alpha
+        options: [alpha, internal]
 
 concurrency:
   group: android-${{ github.ref }}
@@ -43,9 +49,9 @@ jobs:
           path: android/core/build/reports/tests/
 
   release:
-    name: Publish to Play internal testing
+    name: Publish to Play closed testing
     needs: test
-    if: startsWith(github.ref, 'refs/tags/android-v')
+    if: startsWith(github.ref, 'refs/tags/android-v') || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
     environment: android-release
     steps:
@@ -78,5 +84,10 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: com.chrisphua.mynote
           releaseFiles: android/app/build/outputs/bundle/release/app-release.aab
-          track: internal
+          # 'alpha' is Play's default closed track. Internal testing does not
+          # count towards the 14-day closed test a personal account must run
+          # before it may apply for production access, so a tagged release goes
+          # straight to the track that starts that clock. Dispatch the workflow
+          # by hand with track: internal for a quick smoke test instead.
+          track: ${{ inputs.track || 'alpha' }}
           status: completed

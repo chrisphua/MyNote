@@ -14,8 +14,10 @@ android {
         applicationId = "com.chrisphua.mynote"
         minSdk = 26          // covers ~98% of active devices, and gives java.time
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.2.0"
+        // Play keeps every version code ever uploaded. 1 was consumed by the
+        // first closed-testing draft; a re-upload must always be higher.
+        versionCode = 2
+        versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // OAuth client id for Google Drive. Empty in the repo, which simply

@@ -5,6 +5,8 @@
 **/*.p12
 **/*.jks
 **/*.keystore
+**/play-service-account*.json
+**/*-service-account.json
 .env
 .env.*
 !.env.example
