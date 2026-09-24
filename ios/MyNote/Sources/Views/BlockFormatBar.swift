@@ -11,6 +11,10 @@ import MyNoteCore
 ///
 /// An inset also keeps the whole thing in SwiftUI, so it themes itself and can
 /// be driven by the same focus state as everything else.
+///
+/// Inline marks are buttons because they are pressed mid-sentence and need to
+/// be one tap. The block style is a menu because there are ten of them, they
+/// are picked rarely, and naming one beats guessing at an icon.
 struct BlockFormatBar: View {
     let current: BlockType
     /// Marks the whole selection carries, shown as active.
@@ -64,26 +68,40 @@ struct BlockFormatBar: View {
 
                     Divider().frame(height: 24).padding(.horizontal, 4)
 
-                    ForEach(Self.ordered, id: \.self) { type in
-                        Button {
-                            onSelect(type)
-                        } label: {
-                            Image(systemName: type.symbol)
-                                .font(.system(size: 17, weight: .medium))
-                                .frame(width: 40, height: 36)
-                                .background(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .fill(type == current
-                                              ? theme.current.accentColor.opacity(0.18)
-                                              : .clear)
-                                )
-                                .foregroundStyle(type == current
-                                                 ? theme.current.accentColor
-                                                 : theme.current.textSecondary)
+                    // One menu rather than ten icons. Three of those icons were
+                    // `textformat.size` in three sizes, which is unreadable at
+                    // 17pt and gave no way to tell a heading level from its
+                    // glyph. A menu says the name of the thing.
+                    Menu {
+                        Picker("Style", selection: Binding(get: { current },
+                                                           set: { onSelect($0) })) {
+                            ForEach(Self.ordered, id: \.self) { type in
+                                Label(type.label, systemImage: type.symbol).tag(type)
+                            }
                         }
-                        .accessibilityLabel(type.label)
-                        .accessibilityAddTraits(type == current ? [.isSelected] : [])
+                        .pickerStyle(.inline)
+                    } label: {
+                        HStack(spacing: 5) {
+                            Image(systemName: current.symbol)
+                                .font(.system(size: 15, weight: .medium))
+                            Text(current.label)
+                                .font(.system(size: 15, weight: .medium))
+                                .lineLimit(1)
+                            Image(systemName: "chevron.up.chevron.down")
+                                .font(.system(size: 11, weight: .semibold))
+                        }
+                        .foregroundStyle(theme.current.textPrimary)
+                        .padding(.horizontal, 10)
+                        .frame(height: 36)
+                        .background(
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(theme.current.textSecondary.opacity(0.12))
+                        )
                     }
+                    .accessibilityLabel("Block style, \(current.label)")
+                    // Stable handle for the UI tests: the label moves with
+                    // the current block type, so it cannot be matched on.
+                    .accessibilityIdentifier("blockStyleMenu")
                 }
                 .padding(.horizontal, 8)
             }

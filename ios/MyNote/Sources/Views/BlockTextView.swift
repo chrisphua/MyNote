@@ -59,6 +59,10 @@ struct BlockTextView: UIViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.adjustsFontForContentSizeCategory = true
+        // The caret takes its height from `typingAttributes`, falling back to
+        // this. Leaving it unset gave a heading a caret sized for body text.
+        view.font = font
+        view.typingAttributes = typingAttributes(at: 0)
         // Stable handle for the UI tests; block ids are UUIDs and change per run.
         view.accessibilityIdentifier = "blockEditor"
 
@@ -103,12 +107,20 @@ struct BlockTextView: UIViewRepresentable {
             view.attributedText = styled(view.text)
             view.selectedRange = selected
             view.typingAttributes = typingAttributes(at: selected.location + selected.length)
-        } else if view.font != font || view.textColor != textColor {
+        } else if context.coordinator.appliedFont != font
+                    || context.coordinator.appliedTextColor != textColor {
+            // Asking the view (`view.font`) is no good: it answers nil as soon
+            // as the text carries mixed fonts, which any bold span produces, so
+            // this re-rendered on every update and fought the caret.
             let selected = view.selectedRange
+            view.font = font
             view.attributedText = styled(view.text)
             view.selectedRange = selected
+            view.typingAttributes = typingAttributes(at: selected.location + selected.length)
         }
         context.coordinator.appliedSpans = spans
+        context.coordinator.appliedFont = font
+        context.coordinator.appliedTextColor = textColor
 
         view.tintColor = tintColor
         view.placeholderLabel.text = placeholder
@@ -231,6 +243,10 @@ struct BlockTextView: UIViewRepresentable {
         var measured: (text: String, width: CGFloat, font: UIFont, height: CGFloat)?
         /// The spans already rendered into the text view.
         var appliedSpans: [Span] = []
+        /// The block font and colour already applied. Held here because the
+        /// text view cannot be asked once its text carries mixed attributes.
+        var appliedFont: UIFont?
+        var appliedTextColor: UIColor?
 
         init(parent: BlockTextView) {
             self.parent = parent
@@ -252,6 +268,9 @@ struct BlockTextView: UIViewRepresentable {
         }
 
         func textViewDidBeginEditing(_ textView: UITextView) {
+            textView.typingAttributes = parent.typingAttributes(
+                at: textView.selectedRange.location + textView.selectedRange.length
+            )
             if parent.focusedBlockId != parent.blockId {
                 parent.focusedBlockId = parent.blockId
             }

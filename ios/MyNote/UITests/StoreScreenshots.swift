@@ -66,7 +66,7 @@ final class StoreScreenshots: XCTestCase {
         // The bar follows the focused block, not the keyboard — and a simulator
         // with a hardware keyboard attached never shows a software one.
         _ = app.keyboards.firstMatch.waitForExistence(timeout: 5)
-        XCTAssertTrue(app.buttons["Bulleted list"].waitForExistence(timeout: 5), "focusing a block should show the formatting bar")
+        XCTAssertTrue(app.buttons["blockStyleMenu"].waitForExistence(timeout: 5), "focusing a block should show the formatting bar")
         capture("03-formatting")
 
         // 4 — where the notes are kept, which is the whole argument for the app.

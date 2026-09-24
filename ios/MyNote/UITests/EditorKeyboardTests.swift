@@ -138,21 +138,25 @@ final class EditorKeyboardTests: XCTestCase {
         let field = newNote()
         field.typeText("a line")
 
-        XCTAssertTrue(app.buttons["Bulleted list"].exists, "the formatting bar should be up while editing")
-        XCTAssertTrue(app.buttons["Heading 1"].exists)
-        XCTAssertTrue(app.buttons["To-do"].exists)
+        XCTAssertTrue(app.buttons["Bold"].exists, "the formatting bar should be up while editing")
+        XCTAssertTrue(app.buttons["blockStyleMenu"].exists, "and offer the block style menu")
     }
 
     func testFormattingBarChangesTheBlockType() {
         let field = newNote()
         field.typeText("shopping")
 
-        app.buttons["Bulleted list"].tap()
+        // The block styles live behind a menu: ten icons in a row said nothing
+        // about which heading level was which.
+        app.buttons["blockStyleMenu"].tap()
+        let bulleted = app.buttons["Bulleted list"].firstMatch
+        XCTAssertTrue(bulleted.waitForExistence(timeout: 5), "the menu should name each style")
+        bulleted.tap()
 
         // The bullet marker is drawn beside the field, so the text is untouched
         // and the block is still the one being edited.
         XCTAssertEqual(blockValues, ["shopping"])
-        XCTAssertTrue(app.buttons["Bulleted list"].exists)
+        XCTAssertTrue(app.buttons["blockStyleMenu"].exists)
     }
 
     func testTypingIsNotClobberedByItsOwnSave() {

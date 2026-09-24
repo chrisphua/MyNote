@@ -97,6 +97,9 @@ targets:
       - target: MyNote
       - package: MyNoteCore
         product: MyNoteCore
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
 
   # The editor's keyboard behaviour cannot be unit tested — Return and backspace
   # only mean anything to a real text view with a real caret. Three bugs in a row
@@ -108,6 +111,11 @@ targets:
       - path: MyNote/UITests
     dependencies:
       - target: MyNote
+    settings:
+      base:
+        # Without this the test bundles have no Info.plist and code signing
+        # refuses them, so `xcodebuild test` cannot run at all.
+        GENERATE_INFOPLIST_FILE: YES
 
 schemes:
   MyNote:

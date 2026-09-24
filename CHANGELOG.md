@@ -36,6 +36,15 @@ own iCloud Drive or Google Drive, with no server in between.
   to.** Google Drive is the only destination an Android device has — iCloud
   cannot reach Android — so a build without a Drive client id was showing a
   Backup heading above a single row that chose nothing.
+- **iOS: the caret matches the text it sits in.** A heading showed a caret
+  sized for body text, because the text view's own font was never set — the
+  caret takes its metrics from there, while the words were drawn from the
+  block's attributed text.
+- **iOS: block styles are a named menu, not ten icons.** Heading 1, 2 and 3
+  were three sizes of the same glyph at 17pt, indistinguishable in a scrolling
+  row. The bar now shows the current style by name and opens a list that names
+  every option. Bold, italic, underline and strikethrough stay as buttons,
+  because those are pressed mid-sentence.
 - **Android: the ⋮ beside every block is gone.** Everything it held — every
   block type — is on the bar above the keyboard, which is where iOS has always
   had it.
