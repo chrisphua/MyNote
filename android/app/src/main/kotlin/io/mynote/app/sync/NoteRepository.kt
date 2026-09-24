@@ -145,7 +145,7 @@ class NoteRepository(
      * Create the welcome note. The caller decides whether it is wanted; this
      * only knows how to write it.
      */
-    suspend fun seedWelcomeNote(): String {
+    suspend fun seedWelcomeNote(backupAvailable: Boolean): String {
         val noteId = createNote(title = WelcomeNote.TITLE)
 
         // createNote leaves one empty block for the cursor; the first line takes
@@ -153,7 +153,7 @@ class NoteRepository(
         val firstBlockId = db.blocks().idsForNote(noteId).firstOrNull()
         var previousKey: String? = null
 
-        WelcomeNote.lines.forEachIndexed { index, line ->
+        WelcomeNote.lines(backupAvailable).forEachIndexed { index, line ->
             val orderKey = FractionalIndex.between(previousKey, null)
             val block = Block(
                 id = if (index == 0 && firstBlockId != null) firstBlockId else UUID.randomUUID().toString(),

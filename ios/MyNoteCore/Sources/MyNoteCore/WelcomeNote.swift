@@ -7,8 +7,14 @@ import Foundation
 /// them. This says so in the one place a new user is definitely looking, using
 /// the blocks it is describing.
 ///
-/// Defined in core so both platforms seed exactly the same thing. It is an
-/// ordinary note: editable, and deletable, and it never comes back.
+/// Defined in core so both platforms seed the same thing. It is an ordinary
+/// note: editable, and deletable, and it never comes back.
+///
+/// The closing section is deliberately unconditional here, where Kotlin's
+/// takes a `backupAvailable` flag. iOS can always back up — iCloud Drive needs
+/// no client id — so the promise is always true. Android's only destination is
+/// Google Drive, and a build without an OAuth client id hides backup entirely,
+/// so there the copy has to follow what the build can do.
 public enum WelcomeNote {
     public static let title = "Welcome to MyNote"
 

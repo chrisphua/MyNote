@@ -88,7 +88,7 @@ class AppContainer(private val context: Context) {
         // The flag is set after the note exists, not before. Setting it first
         // meant a throw or a process death in between left the flag claiming a
         // note that was never written.
-        repository.seedWelcomeNote()
+        repository.seedWelcomeNote(backupAvailable)
         prefs.edit { putBoolean(WELCOME_SEEDED, true) }
     }
 
