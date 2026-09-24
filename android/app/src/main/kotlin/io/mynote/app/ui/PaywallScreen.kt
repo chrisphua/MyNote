@@ -58,7 +58,7 @@ fun PaywallScreen(container: AppContainer, activity: Activity, onClose: () -> Un
     val product by container.billing.product.collectAsState()
     val entitlements by container.billing.entitlements.collectAsState()
     val error by container.billing.error.collectAsState()
-    val isPro = "pro" in entitlements
+    val isPro = container.billing.isPro(entitlements)
 
     Scaffold(
         containerColor = colors.background,

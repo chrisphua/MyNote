@@ -54,7 +54,19 @@ class BillingManager(
 
     /** While nothing is for sale, everyone has everything. */
     val isPro: Boolean
-        get() = !AppFeatures.PAID_FEATURES_ENABLED || PRO_ENTITLEMENT in _entitlements.value
+        get() = isPro(_entitlements.value)
+
+    /**
+     * The one place that decides "has everything", so a screen collecting
+     * [entitlements] answers it the same way this class does.
+     *
+     * Both screens once made this test themselves as `"pro" in entitlements`
+     * and dropped the flag. Nothing populates the set while sales are off —
+     * [connect] returns before contacting Play — so custom themes wore a
+     * padlock and the paywall was reachable in a build with nothing to sell.
+     */
+    fun isPro(entitlements: Set<String>) =
+        !AppFeatures.PAID_FEATURES_ENABLED || PRO_ENTITLEMENT in entitlements
 
     private val client: BillingClient = BillingClient.newBuilder(context)
         .enablePendingPurchases(PendingPurchasesParams.newBuilder().enableOneTimeProducts().build())

@@ -14,9 +14,9 @@ android {
         applicationId = "com.chrisphua.mynote"
         minSdk = 26          // covers ~98% of active devices, and gives java.time
         targetSdk = 36
-        // Play keeps every version code ever uploaded. 1 and 2 were consumed by
-        // the first closed-testing drafts; a re-upload must always be higher.
-        versionCode = 3
+        // Play keeps every version code ever uploaded. 1-3 were consumed by the
+        // first closed-testing drafts; a re-upload must always be higher.
+        versionCode = 4
         versionName = "1.0.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 

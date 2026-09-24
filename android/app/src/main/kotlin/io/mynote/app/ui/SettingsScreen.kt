@@ -80,7 +80,7 @@ fun SettingsScreen(
     val appearance by container.themeState.appearance.collectAsState()
     val sawRemote by container.billing.sawRemoteLicense.collectAsState()
 
-    val isPro = "pro" in entitlements
+    val isPro = container.billing.isPro(entitlements)
     var pendingSwitch by remember { mutableStateOf<StorageProvider?>(null) }
     var confirmErase by remember { mutableStateOf(false) }
 
