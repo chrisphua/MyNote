@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
@@ -25,6 +26,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -479,13 +481,26 @@ private fun BlockEditor(
         when (type) {
             BlockType.TODO_ITEM -> {
                 val checked = content.checked ?: false
-                IconButton(onClick = { emit(newContent = content.copy(checked = !checked)) }) {
+                // The box sits on the first line of the text, which means its
+                // own height has to be that line's height. An IconButton is a
+                // fixed 48dp square that centres its icon, so with the row
+                // aligned to the top the box floated well below the words.
+                val lineHeight = with(LocalDensity.current) { metrics.lineHeight.toDp() }
+                Box(
+                    Modifier
+                        .height(lineHeight)
+                        .clip(RoundedCornerShape(4.dp))
+                        .clickable { emit(newContent = content.copy(checked = !checked)) },
+                    contentAlignment = Alignment.Center,
+                ) {
                     Icon(
                         if (checked) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank,
                         if (checked) "Completed" else "Not completed",
                         tint = colors.accent,
+                        modifier = Modifier.size(metrics.baseSize.value.dp * 1.2f),
                     )
                 }
+                Spacer(Modifier.width(8.dp))
             }
             BlockType.BULLET -> {
                 Text("•", color = colors.textSecondary, fontSize = metrics.baseSize)

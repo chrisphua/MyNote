@@ -1,6 +1,7 @@
 package io.mynote.app.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -26,12 +27,20 @@ import androidx.compose.material.icons.filled.FormatQuote
 import androidx.compose.material.icons.filled.HorizontalRule
 import androidx.compose.material.icons.filled.Notes
 import androidx.compose.material.icons.filled.Title
+import androidx.compose.material.icons.filled.UnfoldMore
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.MenuDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -39,6 +48,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import io.mynote.app.theme.LocalMyNoteColors
 import io.mynote.core.BlockType
 import io.mynote.core.Mark
@@ -108,9 +118,7 @@ fun BlockFormatBar(
                 Box(Modifier.width(1.dp).height(24.dp).background(colors.border))
                 Spacer(Modifier.width(4.dp))
 
-                for ((type, icon) in items) {
-                    FormatButton(type, icon, selected = type == current) { onSelect(type) }
-                }
+                BlockStyleMenu(current, items, onSelect)
             }
             TextButton(onClick = onDone) { Text("Done", color = colors.accent) }
         }
@@ -118,38 +126,63 @@ fun BlockFormatBar(
 }
 
 @Composable
-private fun FormatButton(
-    type: BlockType,
-    icon: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
+private fun BlockStyleMenu(
+    current: BlockType,
+    items: List<Pair<BlockType, ImageVector>>,
+    onSelect: (BlockType) -> Unit,
 ) {
     val colors = LocalMyNoteColors.current
-    IconButton(
-        onClick = onClick,
-        modifier = Modifier
-            .size(40.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(if (selected) colors.accent.copy(alpha = 0.18f) else colors.surface)
-            .semantics { contentDescription = type.label },
-    ) {
-        Icon(
-            icon,
-            null,
-            tint = if (selected) colors.accent else colors.textSecondary,
-            // The three headings share one glyph, so size carries the
-            // difference, the way it does in the text itself.
-            modifier = Modifier.size(
-                when (type) {
-                    BlockType.HEADING1 -> 24.dp
-                    BlockType.HEADING2 -> 20.dp
-                    BlockType.HEADING3 -> 16.dp
-                    else -> 24.dp
-                }
-            ),
-        )
+    var open by remember { mutableStateOf(false) }
+
+    Box {
+        Row(
+            Modifier
+                .height(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(colors.textSecondary.copy(alpha = 0.12f))
+                .clickable { open = true }
+                .padding(horizontal = 10.dp)
+                .semantics { contentDescription = "Block style, ${current.label}" },
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(5.dp),
+        ) {
+            Icon(iconFor(current, items), null, tint = colors.textPrimary,
+                 modifier = Modifier.size(18.dp))
+            Text(current.label, color = colors.textPrimary, fontSize = 15.sp)
+            Icon(Icons.Default.UnfoldMore, null, tint = colors.textSecondary,
+                 modifier = Modifier.size(14.dp))
+        }
+
+        // Themed explicitly. A DropdownMenu otherwise paints itself from the
+        // Material colour scheme, which is not the theme the user picked — so a
+        // custom theme stopped at the edge of this menu.
+        DropdownMenu(
+            expanded = open,
+            onDismissRequest = { open = false },
+            modifier = Modifier.background(colors.surface),
+        ) {
+            for ((type, icon) in items) {
+                DropdownMenuItem(
+                    text = { Text(type.label, fontSize = 15.sp) },
+                    onClick = { onSelect(type); open = false },
+                    leadingIcon = { Icon(icon, null, modifier = Modifier.size(20.dp)) },
+                    trailingIcon = {
+                        if (type == current) Icon(Icons.Default.Check, null, tint = colors.accent)
+                    },
+                    colors = MenuDefaults.itemColors(
+                        textColor = colors.textPrimary,
+                        leadingIconColor = if (type == current) colors.accent else colors.textSecondary,
+                        trailingIconColor = colors.accent,
+                    ),
+                )
+            }
+        }
     }
 }
+
+private fun iconFor(type: BlockType, items: List<Pair<BlockType, ImageVector>>) =
+    items.first { it.first == type }.second
+
 
 
 @Composable

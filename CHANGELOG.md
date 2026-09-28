@@ -36,6 +36,12 @@ own iCloud Drive or Google Drive, with no server in between.
   to.** Google Drive is the only destination an Android device has — iCloud
   cannot reach Android — so a build without a Drive client id was showing a
   Backup heading above a single row that chose nothing.
+- **Android: a to-do's box sits on its own line.** The checkbox was drawn
+  inside a 48dp touch target that centres its contents, so with the row aligned
+  to the top of the text the box floated below the words it belonged to.
+- **Android: block styles are a named menu, matching iOS.** The same ten icons
+  with the same three identical heading glyphs, replaced by the same menu, in
+  the app's own theme rather than Material's default palette.
 - **iOS: the caret matches the text it sits in.** A heading showed a caret
   sized for body text, because the text view's own font was never set — the
   caret takes its metrics from there, while the words were drawn from the
