@@ -41,3 +41,9 @@ node_modules/
 # Kotlin compiler daemon session files
 android/.kotlin/
 **/.kotlin/
+
+# ---- flutter ----------------------------------------------------------------
+flutter/**/.dart_tool/
+flutter/**/build/
+flutter/**/.packages
+flutter/**/pubspec.lock

@@ -1,0 +1,14 @@
+name: mynote_core
+description: >-
+  The merge logic MyNote is built on: the clock, the ordering keys, the inline
+  span model and the backup file format. Pure Dart, no Flutter dependency, so
+  its tests run in a second and it can never quietly reach for a widget.
+version: 0.1.0
+publish_to: none
+
+environment:
+  sdk: ^3.9.0
+
+dev_dependencies:
+  test: ^1.25.0
+  lints: ^5.0.0
